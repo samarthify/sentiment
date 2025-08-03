@@ -1,0 +1,55 @@
+# Core dependencies
+numpy>=1.24.0
+pandas>=2.0.0
+scikit-learn>=1.3.0
+psutil>=5.9.0
+
+# Machine Learning and NLP
+transformers>=4.36.0
+torch>=2.2.0
+accelerate>=0.27.0
+bitsandbytes>=0.41.0
+sentence-transformers>=2.5.0
+huggingface-hub>=0.20.0
+
+# Autogen and OpenAI (Ensure >=1.0 compatibility)
+# pyautogen~=0.1.14 # Removed older version
+# openai<1.0.0 # Removed older version constraint
+autogen~=0.8.1 # Use the version that seems to be installed/intended
+openai>=1.0.0 # Newer Autogen likely needs newer OpenAI
+
+# Web and API
+fastapi>=0.100.0
+uvicorn>=0.23.0
+websockets>=11.0.0
+requests>=2.31.0
+aiohttp>=3.8.0
+email-validator>=2.0.0
+python-jose[cryptography]>=3.3.0
+
+# Data collection
+selenium>=4.11.0
+beautifulsoup4>=4.12.0
+python-dotenv>=1.0.0
+apify-client>=1.0.0
+
+# Scheduling and monitoring
+schedule>=1.2.0
+python-json-logger>=2.0.0
+
+# Testing
+pytest>=7.4.0
+pytest-asyncio>=0.21.0
+
+# Utilities
+python-dateutil>=2.8.2
+tqdm>=4.65.0
+tabulate>=0.9.0
+
+gunicorn>=20.1.0
+
+sqlalchemy
+psycopg2-binary
+alembic
+
+hf_xet

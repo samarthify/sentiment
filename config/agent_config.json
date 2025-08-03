@@ -1,0 +1,21 @@
+{
+    "collection_interval_minutes": 1440,
+    "processing_interval_minutes": 1440,
+    "data_retention_days": 30,
+    "sentiment_model": "default",
+    "analysis_level": "medium",
+    "sources": {
+        "twitter": true,
+        "news": true,
+        "blogs": false
+    },
+    "keywords": [
+        "important person"
+    ],
+    "adaptive_scheduling": true,
+    "auto_optimization": true,
+    "rate_limits": {
+        "twitter": 100,
+        "news": 50
+    }
+}
