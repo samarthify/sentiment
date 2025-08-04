@@ -33,7 +33,6 @@ import {
   CheckCircle,
   Info,
   Twitter as TwitterIcon,
-  Psychology as PsychologyIcon,
   Tv as TvIcon,
   LocationOn as LocationIcon
 } from '@mui/icons-material';
@@ -48,7 +47,7 @@ import TopNewspapers from './TopNewspapers';
 import TopTelevision from './TopTelevision';
 import TopTwitter from './TopTwitter';
 import MediaSourcesOverview from './MediaSourcesOverview';
-import PresidentialEmotionalSpectrum from './PresotionalSpectrum';
+
 import ContextualSentimentAnalysis from './ContextualSentimentAnalysis';
 import GeographicalDistribution from './GeographicalDistribution';
 
@@ -276,11 +275,6 @@ const PresidentialDashboard = ({ userRole = 'president' }) => {
           label: 'Policy Impact',
           icon: <PolicyIcon />,
           component: <PolicyImpactTracker data={data} loading={loading} />
-        },
-        {
-          label: 'Emotional Spectrum',
-          icon: <PsychologyIcon />,
-          component: <PresidentialEmotionalSpectrum data={data} userRole={userRole} />
         }
       );
     }
@@ -312,11 +306,7 @@ const PresidentialDashboard = ({ userRole = 'president' }) => {
           icon: <NewspaperIcon />,
           component: <MediaBiasTracker data={data} loading={loading} />
         },
-        {
-          label: 'Emotional Spectrum',
-          icon: <PsychologyIcon />,
-          component: <PresidentialEmotionalSpectrum data={data} userRole={userRole} />
-        },
+
         {
           label: 'Detailed Analytics',
           icon: <TrendingUpIcon />,

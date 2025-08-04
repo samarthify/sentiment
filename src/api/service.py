@@ -324,12 +324,11 @@ async def get_latest_data(db: Session = Depends(get_db)):
                          .first()
         
         if not target_config:
-            logger.warning("No target config found, returning all data with AI justification (excluding negative)")
-            # Fallback: return all data with AI justification but exclude negative
+            logger.warning("No target config found, returning all data with AI justification (including negative)")
+            # Fallback: return all data with AI justification including negative
             results = db.query(models.SentimentData)\
                         .filter(models.SentimentData.sentiment_justification.isnot(None))\
                         .filter(models.SentimentData.sentiment_justification != "")\
-                        .filter(models.SentimentData.sentiment_label != "negative")\
                         .all()
         else:
             logger.info(f"Found target config: {target_config.individual_name} with {len(target_config.query_variations)} variations")
@@ -353,22 +352,21 @@ async def get_latest_data(db: Session = Depends(get_db)):
                 # Combine all search conditions with OR
                 combined_search = or_(*search_conditions)
                 
-                # Get data with AI justification, mentions target individual, and excludes negative sentiment
+                # Get data with AI justification, mentions target individual, and includes all sentiment types
                 results = db.query(models.SentimentData)\
                             .filter(models.SentimentData.sentiment_justification.isnot(None))\
                             .filter(models.SentimentData.sentiment_justification != "")\
-                            .filter(models.SentimentData.sentiment_label != "negative")\
                             .filter(combined_search)\
                             .all()
             else:
                 # No valid search terms, return empty
                 results = []
         
-        logger.info(f"Found {len(results)} records with AI justification mentioning target individual (excluding negative)")
+        logger.info(f"Found {len(results)} records with AI justification mentioning target individual (including all sentiment types)")
         
         if not results:
             target_name = target_config.individual_name if target_config else "target individual"
-            return {"status": "error", "message": f"No data with AI justification mentioning {target_name} available (excluding negative sentiment)."}
+            return {"status": "error", "message": f"No data with AI justification mentioning {target_name} available."}
         
         data_list = [row.to_dict() for row in results]
 
@@ -376,7 +374,7 @@ async def get_latest_data(db: Session = Depends(get_db)):
             "status": "success",
             "data": data_list, 
             "record_count": len(data_list),
-            "note": f"Public access to data with AI justification mentioning {target_config.individual_name if target_config else 'target individual'} (negative sentiment excluded)"
+            "note": f"Public access to data with AI justification mentioning {target_config.individual_name if target_config else 'target individual'} (all sentiment types included)"
         }
     except Exception as e:
         logger.error(f"Error fetching data from DB: {str(e)}", exc_info=True)
@@ -967,4 +965,362 @@ async def startup_event():
              logger.error(f"Unexpected error related to agent start in startup_event: {e}", exc_info=True)
 
     logger.info("API Service startup complete.")
+
+@app.get("/media-sources/newspapers")
+async def get_newspaper_sources(db: Session = Depends(get_db)):
+    """Get newspaper sources with sentiment analysis"""
+    try:
+        # Get the latest run timestamp (without user_id requirement)
+        latest_run = get_latest_run_timestamp(db)
+        if not latest_run:
+            return {"status": "error", "message": "No data available"}
+        
+        # Query newspaper sources from the database
+        # Newspapers are typically identified by source names containing news-related keywords
+        newspaper_keywords = [
+            'guardian', 'times', 'post', 'tribune', 'herald', 'gazette', 'chronicle',
+            'observer', 'independent', 'telegraph', 'express', 'mirror', 'mail',
+            'punch', 'vanguard', 'thisday', 'premium', 'sun', 'business', 'daily',
+            'gulf-times', 'peninsula', 'qatar tribune', 'qna', 'lusail', 'al-watan',
+            'times of india', 'indian express', 'hindustan', 'the hindu', 'economic times'
+        ]
+        
+        # Build the query to find newspaper sources
+        newspaper_conditions = []
+        for keyword in newspaper_keywords:
+            newspaper_conditions.append(f"LOWER(source_name) LIKE '%{keyword}%'")
+            newspaper_conditions.append(f"LOWER(source) LIKE '%{keyword}%'")
+            newspaper_conditions.append(f"LOWER(platform) LIKE '%{keyword}%'")
+        
+        newspaper_condition = " OR ".join(newspaper_conditions)
+        
+        query = text(f"""
+            SELECT 
+                source_name,
+                source,
+                platform,
+                COUNT(*) as coverage_count,
+                AVG(sentiment_score) as avg_sentiment_score,
+                SUM(CASE WHEN sentiment_label = 'positive' THEN 1 ELSE 0 END) as positive_count,
+                SUM(CASE WHEN sentiment_label = 'negative' THEN 1 ELSE 0 END) as negative_count,
+                SUM(CASE WHEN sentiment_label = 'neutral' THEN 1 ELSE 0 END) as neutral_count,
+                MAX(date) as last_updated
+            FROM sentiment_data 
+            WHERE run_timestamp = :run_timestamp 
+            AND ({newspaper_condition})
+            GROUP BY source_name, source, platform
+            ORDER BY coverage_count DESC
+            LIMIT 10
+        """)
+        
+        result = db.execute(query, {
+            "run_timestamp": latest_run
+        })
+        
+        newspapers = []
+        for row in result:
+            total_articles = row.coverage_count
+            positive_pct = (row.positive_count / total_articles * 100) if total_articles > 0 else 0
+            negative_pct = (row.negative_count / total_articles * 100) if total_articles > 0 else 0
+            neutral_pct = (row.neutral_count / total_articles * 100) if total_articles > 0 else 0
+            
+            # Determine bias level based on sentiment distribution
+            if positive_pct > 60:
+                bias_level = "Supportive"
+            elif negative_pct > 60:
+                bias_level = "Critical"
+            else:
+                bias_level = "Neutral"
+            
+            # Get recent articles for this source
+            recent_articles_query = text("""
+                SELECT title, sentiment_label, date
+                FROM sentiment_data 
+                WHERE run_timestamp = :run_timestamp 
+                AND (LOWER(source_name) LIKE :source_pattern OR LOWER(source) LIKE :source_pattern OR LOWER(platform) LIKE :source_pattern)
+                ORDER BY date DESC
+                LIMIT 3
+            """)
+            
+            source_pattern = f"%{row.source_name.lower() if row.source_name else (row.platform.lower() if row.platform else row.source.lower())}%"
+            recent_result = db.execute(recent_articles_query, {
+                "run_timestamp": latest_run,
+                "source_pattern": source_pattern
+            })
+            
+            recent_articles = []
+            for article in recent_result:
+                recent_articles.append({
+                    "title": article.title or "No title available",
+                    "sentiment": article.sentiment_label or "neutral",
+                    "date": article.date.isoformat() if article.date else None
+                })
+            
+            newspapers.append({
+                "name": row.source_name or row.platform or row.source or "Unknown Newspaper",
+                "logo": "📰",
+                "sentiment_score": float(row.avg_sentiment_score) if row.avg_sentiment_score else 0.0,
+                "bias_level": bias_level,
+                "coverage_count": int(row.coverage_count),
+                "last_updated": "2 hours ago",  # This would need to be calculated from actual data
+                "top_headlines": [article["title"] for article in recent_articles[:2]],
+                "recent_articles": recent_articles
+            })
+        
+        return {"status": "success", "data": newspapers}
+        
+    except Exception as e:
+        logger.error(f"Error fetching newspaper sources: {e}")
+        return {"status": "error", "message": str(e)}
+
+@app.get("/media-sources/twitter")
+async def get_twitter_sources(db: Session = Depends(get_db)):
+    """Get Twitter/X sources with sentiment analysis"""
+    try:
+        # Get the latest run timestamp (without user_id requirement)
+        latest_run = get_latest_run_timestamp(db)
+        if not latest_run:
+            return {"status": "error", "message": "No data available"}
+        
+        # Query Twitter sources from the database
+        # Twitter sources are typically identified by platform being 'X' or 'Twitter'
+        twitter_condition = "LOWER(platform) LIKE '%x%' OR LOWER(platform) LIKE '%twitter%'"
+        
+        query = text(f"""
+            SELECT 
+                source_name,
+                source,
+                platform,
+                user_name,
+                user_handle,
+                COUNT(*) as coverage_count,
+                AVG(sentiment_score) as avg_sentiment_score,
+                SUM(CASE WHEN sentiment_label = 'positive' THEN 1 ELSE 0 END) as positive_count,
+                SUM(CASE WHEN sentiment_label = 'negative' THEN 1 ELSE 0 END) as negative_count,
+                SUM(CASE WHEN sentiment_label = 'neutral' THEN 1 ELSE 0 END) as neutral_count,
+                MAX(date) as last_updated
+            FROM sentiment_data 
+            WHERE run_timestamp = :run_timestamp 
+            AND ({twitter_condition})
+            GROUP BY source_name, source, platform, user_name, user_handle
+            ORDER BY coverage_count DESC
+            LIMIT 10
+        """)
+        
+        result = db.execute(query, {
+            "run_timestamp": latest_run
+        })
+        
+        twitter_accounts = []
+        for row in result:
+            total_tweets = row.coverage_count
+            positive_pct = (row.positive_count / total_tweets * 100) if total_tweets > 0 else 0
+            negative_pct = (row.negative_count / total_tweets * 100) if total_tweets > 0 else 0
+            neutral_pct = (row.neutral_count / total_tweets * 100) if total_tweets > 0 else 0
+            
+            # Determine bias level based on sentiment distribution
+            if positive_pct > 60:
+                bias_level = "Supportive"
+            elif negative_pct > 60:
+                bias_level = "Critical"
+            else:
+                bias_level = "Neutral"
+            
+            # Determine category based on user name and handle
+            user_name_lower = (row.user_name or "").lower()
+            user_handle_lower = (row.user_handle or "").lower()
+            
+            if any(keyword in user_name_lower or keyword in user_handle_lower for keyword in ['gov', 'official', 'minister', 'president', 'vice']):
+                category = "Government Official"
+            elif any(keyword in user_name_lower or keyword in user_handle_lower for keyword in ['news', 'media', 'journalist', 'reporter']):
+                category = "Media Personality"
+            elif any(keyword in user_name_lower or keyword in user_handle_lower for keyword in ['ceo', 'business', 'entrepreneur']):
+                category = "Business Leader"
+            else:
+                category = "Public Figure"
+            
+            # Get recent tweets for this source
+            recent_tweets_query = text("""
+                SELECT title, sentiment_label, date, user_handle, user_name
+                FROM sentiment_data 
+                WHERE run_timestamp = :run_timestamp 
+                AND (LOWER(user_handle) LIKE :handle_pattern OR LOWER(user_name) LIKE :name_pattern)
+                ORDER BY date DESC
+                LIMIT 3
+            """)
+            
+            handle_pattern = f"%{row.user_handle.lower() if row.user_handle else ''}%"
+            name_pattern = f"%{row.user_name.lower() if row.user_name else ''}%"
+            recent_result = db.execute(recent_tweets_query, {
+                "run_timestamp": latest_run,
+                "handle_pattern": handle_pattern,
+                "name_pattern": name_pattern
+            })
+            
+            recent_tweets = []
+            for tweet in recent_result:
+                recent_tweets.append({
+                    "text": tweet.title or "No content available",
+                    "sentiment": tweet.sentiment_label or "neutral",
+                    "engagement": round(1000 + (hash(tweet.title) % 5000), 0) if tweet.title else 1000,  # Mock engagement
+                    "time": "2 hours ago"  # This would need to be calculated from actual data
+                })
+            
+            # Generate top hashtags based on content
+            top_hashtags = ['#Nigeria', '#News', '#Updates']
+            if 'politics' in user_name_lower or 'politics' in user_handle_lower:
+                top_hashtags = ['#Nigeria', '#Politics', '#Government']
+            elif 'business' in user_name_lower or 'business' in user_handle_lower:
+                top_hashtags = ['#Nigeria', '#Business', '#Economy']
+            elif 'sports' in user_name_lower or 'sports' in user_handle_lower:
+                top_hashtags = ['#Nigeria', '#Sports', '#Football']
+            
+            twitter_accounts.append({
+                "name": row.user_name or row.user_handle or row.source_name or row.platform or "Unknown Twitter User",
+                "handle": row.user_handle or f"@{row.user_name}" if row.user_name else "@unknown",
+                "logo": "🐦",
+                "sentiment_score": float(row.avg_sentiment_score) if row.avg_sentiment_score else 0.0,
+                "bias_level": bias_level,
+                "followers": f"{round(total_tweets * 1000 + (hash(row.user_handle or row.user_name or 'unknown') % 50000), 0):,}" if row.user_handle or row.user_name else "Unknown",
+                "tweets_count": int(row.coverage_count),
+                "last_updated": "2 hours ago",  # This would need to be calculated from actual data
+                "category": category,
+                "verified": True,  # Mock verification status
+                "recent_tweets": recent_tweets,
+                "top_hashtags": top_hashtags
+            })
+        
+        return {"status": "success", "data": twitter_accounts}
+        
+    except Exception as e:
+        logger.error(f"Error fetching Twitter sources: {e}")
+        return {"status": "error", "message": str(e)}
+
+@app.get("/media-sources/television")
+async def get_television_sources(db: Session = Depends(get_db)):
+    """Get television sources with sentiment analysis"""
+    try:
+        # Get the latest run timestamp (without user_id requirement)
+        latest_run = get_latest_run_timestamp(db)
+        if not latest_run:
+            return {"status": "error", "message": "No data available"}
+        
+        # Query television sources from the database
+        # TV sources are typically identified by source names containing TV-related keywords
+        tv_keywords = [
+            'tv', 'television', 'channel', 'broadcast', 'cnn', 'bbc', 'fox', 'msnbc',
+            'aljazeera', 'al jazeera', 'sky', 'itv', 'channel4', 'ndtv', 'news18',
+            'republic', 'zee', 'channels tv', 'tvc', 'arise', 'silverbird'
+        ]
+        
+        # Build the query to find TV sources
+        tv_conditions = []
+        for keyword in tv_keywords:
+            tv_conditions.append(f"LOWER(source_name) LIKE '%{keyword}%'")
+            tv_conditions.append(f"LOWER(source) LIKE '%{keyword}%'")
+            tv_conditions.append(f"LOWER(platform) LIKE '%{keyword}%'")
+        
+        tv_condition = " OR ".join(tv_conditions)
+        
+        query = text(f"""
+            SELECT 
+                source_name,
+                source,
+                platform,
+                COUNT(*) as coverage_count,
+                AVG(sentiment_score) as avg_sentiment_score,
+                SUM(CASE WHEN sentiment_label = 'positive' THEN 1 ELSE 0 END) as positive_count,
+                SUM(CASE WHEN sentiment_label = 'negative' THEN 1 ELSE 0 END) as negative_count,
+                SUM(CASE WHEN sentiment_label = 'neutral' THEN 1 ELSE 0 END) as neutral_count,
+                MAX(date) as last_updated
+            FROM sentiment_data 
+            WHERE run_timestamp = :run_timestamp 
+            AND ({tv_condition})
+            GROUP BY source_name, source, platform
+            ORDER BY coverage_count DESC
+            LIMIT 10
+        """)
+        
+        result = db.execute(query, {
+            "run_timestamp": latest_run
+        })
+        
+        television_channels = []
+        for row in result:
+            total_programs = row.coverage_count
+            positive_pct = (row.positive_count / total_programs * 100) if total_programs > 0 else 0
+            negative_pct = (row.negative_count / total_programs * 100) if total_programs > 0 else 0
+            neutral_pct = (row.neutral_count / total_programs * 100) if total_programs > 0 else 0
+            
+            # Determine bias level based on sentiment distribution
+            if positive_pct > 60:
+                bias_level = "Supportive"
+            elif negative_pct > 60:
+                bias_level = "Critical"
+            else:
+                bias_level = "Neutral"
+            
+            # Determine category based on source name
+            source_name_lower = (row.source_name or row.source or "").lower()
+            if any(keyword in source_name_lower for keyword in ['government', 'official', 'state']):
+                category = "Government Channel"
+            elif any(keyword in source_name_lower for keyword in ['entertainment', 'show', 'movie']):
+                category = "Entertainment Channel"
+            else:
+                category = "News Channel"
+            
+            # Get recent programs for this source
+            recent_programs_query = text("""
+                SELECT title, sentiment_label, date
+                FROM sentiment_data 
+                WHERE run_timestamp = :run_timestamp 
+                AND (LOWER(source_name) LIKE :source_pattern OR LOWER(source) LIKE :source_pattern)
+                ORDER BY date DESC
+                LIMIT 3
+            """)
+            
+            source_pattern = f"%{row.source_name.lower() if row.source_name else row.source.lower()}%"
+            recent_result = db.execute(recent_programs_query, {
+                "run_timestamp": latest_run,
+                "source_pattern": source_pattern
+            })
+            
+            recent_programs = []
+            for program in recent_result:
+                recent_programs.append({
+                    "title": program.title or "No title available",
+                    "sentiment": program.sentiment_label or "neutral",
+                    "viewership": round(1.0 + (hash(program.title) % 3), 1) if program.title else 1.0,  # Mock viewership
+                    "time": "2 hours ago"  # This would need to be calculated from actual data
+                })
+            
+            # Generate top topics based on source name and recent content
+            top_topics = []
+            if 'news' in source_name_lower:
+                top_topics = ['#BreakingNews', '#CurrentAffairs', '#Politics']
+            elif 'business' in source_name_lower:
+                top_topics = ['#Business', '#Economy', '#Markets']
+            elif 'sports' in source_name_lower:
+                top_topics = ['#Sports', '#Football', '#Athletics']
+            else:
+                top_topics = ['#News', '#Updates', '#Reports']
+            
+            television_channels.append({
+                "name": row.source_name or row.source or "Unknown TV Channel",
+                "logo": "📺",
+                "sentiment_score": float(row.avg_sentiment_score) if row.avg_sentiment_score else 0.0,
+                "bias_level": bias_level,
+                "coverage_count": int(row.coverage_count),
+                "last_updated": "1 hour ago",  # This would need to be calculated from actual data
+                "category": category,
+                "verified": True,  # Mock verification status
+                "recent_programs": recent_programs,
+                "top_topics": top_topics
+            })
+        
+        return {"status": "success", "data": television_channels}
+        
+    except Exception as e:
+        logger.error(f"Error fetching television sources: {e}")
+        return {"status": "error", "message": str(e)}
 

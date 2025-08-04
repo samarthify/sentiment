@@ -45,7 +45,8 @@
   },
   "scripts": {
     "start": "react-scripts start",
-    "build": "DISABLE_ESLINT_PLUGIN=true react-scripts build",
+    "build": "set DISABLE_ESLINT_PLUGIN=true && react-scripts build",
+    "build:unix": "DISABLE_ESLINT_PLUGIN=true react-scripts build",
     "test": "react-scripts test",
     "eject": "react-scripts eject",
     "copy-locales": "mkdir -p build/locales && cp -r public/locales/* build/locales/",

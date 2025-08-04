@@ -20,7 +20,7 @@ const getStartOfMonth = (date) => {
 
 class DataService {
   async loadData(accessToken) {
-    const apiUrl = "http://13.202.48.110:8000" || "http://localhost:8000";
+    const apiUrl = process.env.REACT_APP_API_URL || 'http://localhost:8000'; // Use env var or default
     // Use latest-data endpoint by default for now
     console.log('Using latest-data endpoint by default...');
     return this.loadDataFromLatestDataEndpoint(apiUrl);
@@ -1158,6 +1158,126 @@ class DataService {
       throw new Error(`Error triggering agent run: ${error.message}`);
     }
   }
+
+  // Media Sources Methods
+  async getNewspaperSources(accessToken) {
+    const apiUrl = process.env.REACT_APP_API_URL || 'http://localhost:8000';
+    const endpoint = `${apiUrl}/media-sources/newspapers`;
+    console.log(`Fetching newspaper sources from: ${endpoint}`);
+
+    try {
+      const headers = { 'Content-Type': 'application/json' };
+      // Only add authorization header if accessToken is provided
+      if (accessToken) {
+        headers['Authorization'] = `Bearer ${accessToken}`;
+      }
+
+      const response = await fetch(endpoint, { headers });
+      
+      if (!response.ok) {
+        let errorBody = `Failed to fetch newspaper sources: ${response.status} ${response.statusText}`;
+        try {
+          const errorJson = await response.json();
+          errorBody = errorJson.detail || errorBody;
+        } catch(e) { /* Ignore if not JSON */ }
+        throw new Error(errorBody);
+      }
+      
+      const result = await response.json();
+      
+      if (result.status === 'success' && result.data) {
+        console.log('Newspaper sources loaded:', result.data.length);
+        return result.data;
+      } else {
+        console.error('API did not return successful status or data:', result);
+        return [];
+      }
+      
+    } catch (error) {
+      console.error('Error fetching newspaper sources:', error);
+      return [];
+    }
+  }
+
+  async getTwitterSources(accessToken) {
+    const apiUrl = process.env.REACT_APP_API_URL || 'http://localhost:8000';
+    const endpoint = `${apiUrl}/media-sources/twitter`;
+    console.log(`Fetching Twitter sources from: ${endpoint}`);
+
+    try {
+      const headers = { 'Content-Type': 'application/json' };
+      // Only add authorization header if accessToken is provided
+      if (accessToken) {
+        headers['Authorization'] = `Bearer ${accessToken}`;
+      }
+
+      const response = await fetch(endpoint, { headers });
+      
+      if (!response.ok) {
+        let errorBody = `Failed to fetch Twitter sources: ${response.status} ${response.statusText}`;
+        try {
+          const errorJson = await response.json();
+          errorBody = errorJson.detail || errorBody;
+        } catch(e) { /* Ignore if not JSON */ }
+        throw new Error(errorBody);
+      }
+      
+      const result = await response.json();
+      
+      if (result.status === 'success' && result.data) {
+        console.log('Twitter sources loaded:', result.data.length);
+        return result.data;
+      } else {
+        console.error('API did not return successful status or data:', result);
+        return [];
+      }
+      
+    } catch (error) {
+      console.error('Error fetching Twitter sources:', error);
+      return [];
+    }
+  }
+
+  async getTelevisionSources(accessToken) {
+    const apiUrl = process.env.REACT_APP_API_URL || 'http://localhost:8000';
+    const endpoint = `${apiUrl}/media-sources/television`;
+    console.log(`Fetching television sources from: ${endpoint}`);
+
+    try {
+      const headers = { 'Content-Type': 'application/json' };
+      // Only add authorization header if accessToken is provided
+      if (accessToken) {
+        headers['Authorization'] = `Bearer ${accessToken}`;
+      }
+
+      const response = await fetch(endpoint, { headers });
+      
+      if (!response.ok) {
+        let errorBody = `Failed to fetch television sources: ${response.status} ${response.statusText}`;
+        try {
+          const errorJson = await response.json();
+          errorBody = errorJson.detail || errorBody;
+        } catch(e) { /* Ignore if not JSON */ }
+        throw new Error(errorBody);
+      }
+      
+      const result = await response.json();
+      
+      if (result.status === 'success' && result.data) {
+        console.log('Television sources loaded:', result.data.length);
+        return result.data;
+      } else {
+        console.error('API did not return successful status or data:', result);
+        return [];
+      }
+      
+    } catch (error) {
+      console.error('Error fetching television sources:', error);
+      return [];
+    }
+  }
 }
 
-export default new DataService();
+const dataService = new DataService();
+
+export default dataService;

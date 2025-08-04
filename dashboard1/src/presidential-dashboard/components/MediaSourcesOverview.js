@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Box,
   Typography,
@@ -7,7 +7,9 @@ import {
   CardContent,
   Chip,
   Avatar,
-  LinearProgress
+  LinearProgress,
+  CircularProgress,
+  Alert
 } from '@mui/material';
 import {
   Newspaper as NewspaperIcon,
@@ -18,32 +20,100 @@ import {
   Remove as RemoveIcon
 } from '@mui/icons-material';
 import { motion } from 'framer-motion';
+import DataService from '../../services/DataService';
 
 const MediaSourcesOverview = () => {
-  // Mock data for media sources overview
-  const mediaOverview = {
-    newspapers: {
-      total_sources: 10,
-      avg_sentiment: -0.25,
-      total_articles: 156,
-      top_performers: ['ThisDay Live', 'Premium Times'],
-      critical_sources: ['The Guardian Nigeria', 'Vanguard News', 'Punch Newspapers']
-    },
-    television: {
-      total_sources: 8,
-      avg_sentiment: 0.15,
-      total_reports: 89,
-      top_performers: ['NTA', 'Channels TV'],
-      critical_sources: ['Arise TV', 'TVC News']
-    },
-    twitter: {
-      total_influencers: 15,
-      avg_sentiment: -0.35,
-      total_tweets: 234,
-      top_performers: ['Bashir Ahmad', 'Tolu Ogunlesi'],
-      critical_influencers: ['Femi Fani-Kayode', 'Aisha Yesufu', 'Reno Omokri']
-    }
-  };
+  const [mediaOverview, setMediaOverview] = useState({
+    newspapers: { total_sources: 0, avg_sentiment: 0, total_articles: 0, top_performers: [], critical_sources: [] },
+    television: { total_sources: 0, avg_sentiment: 0, total_reports: 0, top_performers: [], critical_sources: [] },
+    twitter: { total_influencers: 0, avg_sentiment: 0, total_tweets: 0, top_performers: [], critical_influencers: [] }
+  });
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+
+  useEffect(() => {
+    const fetchMediaData = async () => {
+      try {
+        setLoading(true);
+        setError(null);
+
+        // Fetch data from all three endpoints without authentication
+        const [newspapers, television, twitter] = await Promise.all([
+          DataService.getNewspaperSources(null),
+          DataService.getTelevisionSources(null),
+          DataService.getTwitterSources(null)
+        ]);
+
+        // Process newspaper data
+        const newspaperData = {
+          total_sources: newspapers.length,
+          avg_sentiment: newspapers.length > 0 ? 
+            newspapers.reduce((sum, paper) => sum + paper.sentiment_score, 0) / newspapers.length : 0,
+          total_articles: newspapers.reduce((sum, paper) => sum + paper.coverage_count, 0),
+          top_performers: newspapers
+            .filter(paper => paper.sentiment_score > 0.1)
+            .sort((a, b) => b.sentiment_score - a.sentiment_score)
+            .slice(0, 3)
+            .map(paper => paper.name),
+          critical_sources: newspapers
+            .filter(paper => paper.sentiment_score < -0.1)
+            .sort((a, b) => a.sentiment_score - b.sentiment_score)
+            .slice(0, 3)
+            .map(paper => paper.name)
+        };
+
+        // Process television data
+        const televisionData = {
+          total_sources: television.length,
+          avg_sentiment: television.length > 0 ? 
+            television.reduce((sum, tv) => sum + tv.sentiment_score, 0) / television.length : 0,
+          total_reports: television.reduce((sum, tv) => sum + tv.coverage_count, 0),
+          top_performers: television
+            .filter(tv => tv.sentiment_score > 0.1)
+            .sort((a, b) => b.sentiment_score - a.sentiment_score)
+            .slice(0, 3)
+            .map(tv => tv.name),
+          critical_sources: television
+            .filter(tv => tv.sentiment_score < -0.1)
+            .sort((a, b) => a.sentiment_score - b.sentiment_score)
+            .slice(0, 3)
+            .map(tv => tv.name)
+        };
+
+        // Process Twitter data
+        const twitterData = {
+          total_influencers: twitter.length,
+          avg_sentiment: twitter.length > 0 ? 
+            twitter.reduce((sum, account) => sum + account.sentiment_score, 0) / twitter.length : 0,
+          total_tweets: twitter.reduce((sum, account) => sum + account.tweets_count, 0),
+          top_performers: twitter
+            .filter(account => account.sentiment_score > 0.1)
+            .sort((a, b) => b.sentiment_score - a.sentiment_score)
+            .slice(0, 3)
+            .map(account => account.name),
+          critical_influencers: twitter
+            .filter(account => account.sentiment_score < -0.1)
+            .sort((a, b) => a.sentiment_score - b.sentiment_score)
+            .slice(0, 3)
+            .map(account => account.name)
+        };
+
+        setMediaOverview({
+          newspapers: newspaperData,
+          television: televisionData,
+          twitter: twitterData
+        });
+
+      } catch (err) {
+        console.error('Error fetching media data:', err);
+        setError('Failed to load media sources data. Please try again later.');
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchMediaData();
+  }, []);
 
   const getSentimentColor = (score) => {
     if (score >= 0.3) return 'success';
@@ -63,7 +133,7 @@ const MediaSourcesOverview = () => {
       icon: <NewspaperIcon />,
       color: 'primary',
       data: mediaOverview.newspapers,
-      description: 'Top 10 Nigerian newspapers'
+      description: 'Top Nigerian newspapers'
     },
     {
       type: 'Television',
@@ -80,6 +150,24 @@ const MediaSourcesOverview = () => {
       description: 'Key influencers & officials'
     }
   ];
+
+  if (loading) {
+    return (
+      <Box display="flex" justifyContent="center" alignItems="center" minHeight="400px">
+        <CircularProgress />
+      </Box>
+    );
+  }
+
+  if (error) {
+    return (
+      <Box>
+        <Alert severity="error" sx={{ mb: 3 }}>
+          {error}
+        </Alert>
+      </Box>
+    );
+  }
 
   return (
     <Box>
@@ -196,8 +284,11 @@ const MediaSourcesOverview = () => {
                 🎯 Overall Media Sentiment
               </Typography>
               <Typography variant="body2" color="text.secondary">
-                Newspapers show the most critical coverage (-25% sentiment), while television channels are more balanced (+15% sentiment). 
-                Twitter influencers are highly critical (-35% sentiment) with significant public engagement.
+                Newspapers show {mediaOverview.newspapers.avg_sentiment > 0 ? 'positive' : 'negative'} coverage 
+                ({(mediaOverview.newspapers.avg_sentiment * 100).toFixed(0)}% sentiment), while television channels are 
+                {mediaOverview.television.avg_sentiment > 0 ? ' more balanced' : ' critical'} 
+                ({(mediaOverview.television.avg_sentiment * 100).toFixed(0)}% sentiment). 
+                Twitter influencers show {(mediaOverview.twitter.avg_sentiment * 100).toFixed(0)}% sentiment with significant public engagement.
               </Typography>
             </Card>
           </Grid>
@@ -207,7 +298,8 @@ const MediaSourcesOverview = () => {
                 📊 Coverage Distribution
               </Typography>
               <Typography variant="body2" color="text.secondary">
-                Newspapers lead with 156 articles analyzed, followed by Twitter with 234 tweets, and television with 89 reports. 
+                Newspapers lead with {mediaOverview.newspapers.total_articles} articles analyzed, followed by Twitter with {mediaOverview.twitter.total_tweets} tweets, 
+                and television with {mediaOverview.television.total_reports} reports. 
                 This provides comprehensive coverage across all media types.
               </Typography>
             </Card>

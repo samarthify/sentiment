@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Box,
   Typography,
@@ -18,7 +18,9 @@ import {
   ListItemIcon,
   Avatar,
   LinearProgress,
-  Badge
+  Badge,
+  CircularProgress,
+  Alert
 } from '@mui/material';
 import {
   TrendingUp as TrendingUpIcon,
@@ -32,122 +34,47 @@ import {
   Twitter as TwitterIcon
 } from '@mui/icons-material';
 import { motion } from 'framer-motion';
+import DataService from '../../services/DataService';
+
+// Import useAuth hook or create a fallback
+let useAuth;
+try {
+  const authModule = require('../../contexts/AuthContext');
+  useAuth = authModule.useAuth;
+} catch (error) {
+  // Fallback if AuthContext is not available
+  useAuth = () => ({ accessToken: null });
+}
 
 const TopTwitter = () => {
   const [selectedSource, setSelectedSource] = useState(null);
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [topTwitter, setTopTwitter] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  
+  // Use the imported hook or fallback
+  const authContext = useAuth();
+  const accessToken = authContext?.accessToken || null;
 
-  // Mock data for top Nigerian Twitter influencers
-  const topTwitter = [
-    {
-      name: 'Femi Fani-Kayode',
-      handle: '@realFFK',
-      logo: '🐦',
-      sentiment_score: -0.75,
-      bias_level: 'Critical',
-      followers: '2.1M',
-      tweets_count: 15,
-      last_updated: '30 minutes ago',
-      category: 'Politician',
-      verified: true,
-      recent_tweets: [
-        { text: 'The current economic policies are causing hardship for Nigerians', sentiment: 'negative', engagement: 12500, time: '2 hours ago' },
-        { text: 'Government needs to address the fuel subsidy removal impact', sentiment: 'negative', engagement: 8900, time: '4 hours ago' },
-        { text: 'Security situation in the country requires immediate attention', sentiment: 'negative', engagement: 15600, time: '6 hours ago' }
-      ],
-      top_hashtags: ['#Nigeria', '#FuelSubsidy', '#EconomicPolicy']
-    },
-    {
-      name: 'Bashir Ahmad',
-      handle: '@BashirAhmaad',
-      logo: '🐦',
-      sentiment_score: 0.45,
-      bias_level: 'Supportive',
-      followers: '1.8M',
-      tweets_count: 12,
-      last_updated: '1 hour ago',
-      category: 'Government Official',
-      verified: true,
-      recent_tweets: [
-        { text: 'Infrastructure development projects are progressing well across Nigeria', sentiment: 'positive', engagement: 9800, time: '1 hour ago' },
-        { text: 'Economic reforms are showing positive results', sentiment: 'positive', engagement: 7600, time: '3 hours ago' },
-        { text: 'Government commitment to security is unwavering', sentiment: 'positive', engagement: 11200, time: '5 hours ago' }
-      ],
-      top_hashtags: ['#Nigeria', '#Infrastructure', '#Security']
-    },
-    {
-      name: 'Dele Momodu',
-      handle: '@DeleMomodu',
-      logo: '🐦',
-      sentiment_score: -0.35,
-      bias_level: 'Critical',
-      followers: '1.5M',
-      tweets_count: 8,
-      last_updated: '2 hours ago',
-      category: 'Media Personality',
-      verified: true,
-      recent_tweets: [
-        { text: 'The exchange rate policy needs urgent review', sentiment: 'negative', engagement: 6800, time: '3 hours ago' },
-        { text: 'Education sector requires more funding', sentiment: 'neutral', engagement: 5400, time: '5 hours ago' },
-        { text: 'Healthcare system improvements are needed', sentiment: 'negative', engagement: 7200, time: '7 hours ago' }
-      ],
-      top_hashtags: ['#Nigeria', '#Education', '#Healthcare']
-    },
-    {
-      name: 'Aisha Yesufu',
-      handle: '@AishaYesufu',
-      logo: '🐦',
-      sentiment_score: -0.65,
-      bias_level: 'Critical',
-      followers: '1.2M',
-      tweets_count: 20,
-      last_updated: '45 minutes ago',
-      category: 'Activist',
-      verified: true,
-      recent_tweets: [
-        { text: 'Human rights violations must be addressed immediately', sentiment: 'negative', engagement: 18900, time: '1 hour ago' },
-        { text: 'Accountability in government spending is crucial', sentiment: 'negative', engagement: 15600, time: '3 hours ago' },
-        { text: 'Youth unemployment crisis needs urgent attention', sentiment: 'negative', engagement: 13400, time: '5 hours ago' }
-      ],
-      top_hashtags: ['#HumanRights', '#Accountability', '#YouthEmployment']
-    },
-    {
-      name: 'Tolu Ogunlesi',
-      handle: '@toluogunlesi',
-      logo: '🐦',
-      sentiment_score: 0.25,
-      bias_level: 'Supportive',
-      followers: '950K',
-      tweets_count: 10,
-      last_updated: '1.5 hours ago',
-      category: 'Government Official',
-      verified: true,
-      recent_tweets: [
-        { text: 'Digital economy initiatives are transforming Nigeria', sentiment: 'positive', engagement: 7200, time: '2 hours ago' },
-        { text: 'Agricultural development programs are successful', sentiment: 'positive', engagement: 5800, time: '4 hours ago' },
-        { text: 'Technology adoption in government is improving', sentiment: 'positive', engagement: 6400, time: '6 hours ago' }
-      ],
-      top_hashtags: ['#DigitalEconomy', '#Agriculture', '#Technology']
-    },
-    {
-      name: 'Reno Omokri',
-      handle: '@renoomokri',
-      logo: '🐦',
-      sentiment_score: -0.55,
-      bias_level: 'Critical',
-      followers: '1.1M',
-      tweets_count: 18,
-      last_updated: '2.5 hours ago',
-      category: 'Political Analyst',
-      verified: true,
-      recent_tweets: [
-        { text: 'Economic policies are affecting the common man', sentiment: 'negative', engagement: 9800, time: '3 hours ago' },
-        { text: 'Inflation rate is concerning for Nigerians', sentiment: 'negative', engagement: 8200, time: '5 hours ago' },
-        { text: 'Security challenges persist in various regions', sentiment: 'negative', engagement: 11400, time: '7 hours ago' }
-      ],
-      top_hashtags: ['#Economy', '#Inflation', '#Security']
-    }
-  ];
+  useEffect(() => {
+    const fetchTwitter = async () => {
+      try {
+        setLoading(true);
+        setError(null);
+        const data = await DataService.getTwitterSources(accessToken);
+        setTopTwitter(data);
+      } catch (err) {
+        console.error('Error fetching Twitter sources:', err);
+        setError(err.message || 'Failed to load Twitter sources');
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    // Always try to fetch data, even without access token (for testing)
+    fetchTwitter();
+  }, [accessToken]);
 
   const getSentimentColor = (score) => {
     if (score >= 0.3) return 'success';
@@ -163,23 +90,27 @@ const TopTwitter = () => {
 
   const getCategoryIcon = (category) => {
     switch (category) {
-      case 'Politician': return <PersonIcon />;
-      case 'Government Official': return <BusinessIcon />;
-      case 'Media Personality': return <GroupIcon />;
-      case 'Activist': return <PersonIcon />;
-      case 'Political Analyst': return <GroupIcon />;
-      default: return <PersonIcon />;
+      case 'Government Official':
+        return <BusinessIcon />;
+      case 'Media Personality':
+        return <PersonIcon />;
+      case 'Business Leader':
+        return <GroupIcon />;
+      default:
+        return <PersonIcon />;
     }
   };
 
   const getCategoryColor = (category) => {
     switch (category) {
-      case 'Politician': return 'primary';
-      case 'Government Official': return 'success';
-      case 'Media Personality': return 'info';
-      case 'Activist': return 'warning';
-      case 'Political Analyst': return 'secondary';
-      default: return 'default';
+      case 'Government Official':
+        return 'primary';
+      case 'Media Personality':
+        return 'secondary';
+      case 'Business Leader':
+        return 'success';
+      default:
+        return 'default';
     }
   };
 
@@ -193,15 +124,52 @@ const TopTwitter = () => {
     setSelectedSource(null);
   };
 
+  if (loading) {
+    return (
+      <Box display="flex" justifyContent="center" alignItems="center" minHeight="400px">
+        <CircularProgress />
+      </Box>
+    );
+  }
+
+  if (error) {
+    return (
+      <Box>
+        <Typography variant="h5" gutterBottom sx={{ fontWeight: 600, mb: 3 }}>
+          🐦 Top Twitter Influencers
+        </Typography>
+        <Alert severity="error" sx={{ mb: 2 }}>
+          {error}
+        </Alert>
+        <Typography variant="body2" color="text.secondary">
+          Unable to load Twitter sources. Please try again later.
+        </Typography>
+      </Box>
+    );
+  }
+
+  if (topTwitter.length === 0) {
+    return (
+      <Box>
+        <Typography variant="h5" gutterBottom sx={{ fontWeight: 600, mb: 3 }}>
+          🐦 Top Twitter Influencers
+        </Typography>
+        <Typography variant="body2" color="text.secondary">
+          No Twitter sources found in the current data.
+        </Typography>
+      </Box>
+    );
+  }
+
   return (
     <Box>
       <Typography variant="h5" gutterBottom sx={{ fontWeight: 600, mb: 3 }}>
-        🐦 Top Twitter Influencers Analysis
+        🐦 Top Twitter Influencers
       </Typography>
       
       <Grid container spacing={3}>
-        {topTwitter.map((influencer, index) => (
-          <Grid item xs={12} md={6} lg={4} key={influencer.name}>
+        {topTwitter.map((account, index) => (
+          <Grid item xs={12} md={6} lg={4} key={account.handle}>
             <motion.div
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
@@ -215,35 +183,28 @@ const TopTwitter = () => {
                   '&:hover': { elevation: 4, transform: 'translateY(-2px)' },
                   transition: 'all 0.3s ease'
                 }}
-                onClick={() => handleSourceClick(influencer)}
+                onClick={() => handleSourceClick(account)}
               >
                 <CardContent>
                   <Box display="flex" alignItems="center" justifyContent="space-between" mb={2}>
                     <Box display="flex" alignItems="center">
-                      <Badge
-                        overlap="circular"
-                        anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
-                        badgeContent={
-                          influencer.verified ? (
-                            <VerifiedIcon sx={{ fontSize: 16, color: '#1DA1F2' }} />
-                          ) : null
-                        }
-                      >
-                        <Avatar sx={{ bgcolor: '#1DA1F2', mr: 2 }}>
-                          {influencer.logo}
-                        </Avatar>
-                      </Badge>
+                      <Avatar sx={{ bgcolor: 'primary.main', mr: 2 }}>
+                        {account.logo}
+                      </Avatar>
                       <Box>
-                        <Typography variant="h6" sx={{ fontWeight: 600 }}>
-                          {influencer.name}
-                        </Typography>
+                        <Box display="flex" alignItems="center" gap={1}>
+                          <Typography variant="h6" sx={{ fontWeight: 600 }}>
+                            {account.name}
+                          </Typography>
+                          {account.verified && <VerifiedIcon color="primary" fontSize="small" />}
+                        </Box>
                         <Typography variant="caption" color="text.secondary">
-                          {influencer.handle} • {influencer.followers} followers
+                          {account.handle} • {account.followers} followers
                         </Typography>
                       </Box>
                     </Box>
                     <IconButton size="small">
-                      <TwitterIcon />
+                      <OpenInNewIcon />
                     </IconButton>
                   </Box>
 
@@ -253,16 +214,16 @@ const TopTwitter = () => {
                         Sentiment Score
                       </Typography>
                       <Chip
-                        icon={getSentimentIcon(influencer.sentiment_score)}
-                        label={`${(influencer.sentiment_score * 100).toFixed(0)}%`}
-                        color={getSentimentColor(influencer.sentiment_score)}
+                        icon={getSentimentIcon(account.sentiment_score)}
+                        label={`${(account.sentiment_score * 100).toFixed(0)}%`}
+                        color={getSentimentColor(account.sentiment_score)}
                         size="small"
                       />
                     </Box>
                     <LinearProgress
                       variant="determinate"
-                      value={Math.abs(influencer.sentiment_score * 100)}
-                      color={getSentimentColor(influencer.sentiment_score)}
+                      value={Math.abs(account.sentiment_score * 100)}
+                      color={getSentimentColor(account.sentiment_score)}
                       sx={{ height: 6, borderRadius: 3 }}
                     />
                   </Box>
@@ -272,47 +233,45 @@ const TopTwitter = () => {
                       Bias Level
                     </Typography>
                     <Chip
-                      label={influencer.bias_level}
-                      color={influencer.bias_level === 'Critical' ? 'error' : 
-                             influencer.bias_level === 'Supportive' ? 'success' : 'warning'}
+                      label={account.bias_level}
+                      color={account.bias_level === 'Critical' ? 'error' : 
+                             account.bias_level === 'Supportive' ? 'success' : 'warning'}
                       size="small"
                     />
                   </Box>
 
                   <Box mb={2}>
                     <Typography variant="body2" color="text.secondary" gutterBottom>
-                      Category & Activity
+                      Category
                     </Typography>
-                    <Box display="flex" gap={1} flexWrap="wrap">
-                      <Chip
-                        icon={getCategoryIcon(influencer.category)}
-                        label={influencer.category}
-                        color={getCategoryColor(influencer.category)}
-                        size="small"
-                      />
-                      <Chip
-                        label={`${influencer.tweets_count} tweets`}
-                        variant="outlined"
-                        size="small"
-                      />
-                    </Box>
+                    <Chip
+                      icon={getCategoryIcon(account.category)}
+                      label={account.category}
+                      color={getCategoryColor(account.category)}
+                      size="small"
+                    />
                   </Box>
 
                   <Box>
                     <Typography variant="body2" color="text.secondary" gutterBottom>
-                      Top Hashtags
+                      Recent Tweets
                     </Typography>
-                    <Box display="flex" gap={0.5} flexWrap="wrap">
-                      {influencer.top_hashtags.slice(0, 2).map((hashtag, idx) => (
-                        <Chip
-                          key={idx}
-                          label={hashtag}
-                          size="small"
-                          variant="outlined"
-                          sx={{ fontSize: '0.7rem' }}
-                        />
-                      ))}
-                    </Box>
+                    {account.recent_tweets && account.recent_tweets.slice(0, 2).map((tweet, idx) => (
+                      <Typography 
+                        key={idx} 
+                        variant="body2" 
+                        sx={{ 
+                          fontSize: '0.8rem',
+                          mb: 0.5,
+                          display: '-webkit-box',
+                          WebkitLineClamp: 2,
+                          WebkitBoxOrient: 'vertical',
+                          overflow: 'hidden'
+                        }}
+                      >
+                        • {tweet.text}
+                      </Typography>
+                    ))}
                   </Box>
                 </CardContent>
               </Card>
@@ -331,99 +290,99 @@ const TopTwitter = () => {
         {selectedSource && (
           <>
             <DialogTitle>
-              <Box display="flex" alignItems="center">
-                <Badge
-                  overlap="circular"
-                  anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
-                  badgeContent={
-                    selectedSource.verified ? (
-                      <VerifiedIcon sx={{ fontSize: 20, color: '#1DA1F2' }} />
-                    ) : null
-                  }
-                >
-                  <Avatar sx={{ bgcolor: '#1DA1F2', mr: 2 }}>
-                    {selectedSource.logo}
-                  </Avatar>
-                </Badge>
+              <Box display="flex" alignItems="center" gap={2}>
+                <Avatar sx={{ bgcolor: 'primary.main' }}>
+                  {selectedSource.logo}
+                </Avatar>
                 <Box>
-                  <Typography variant="h6">{selectedSource.name}</Typography>
+                  <Box display="flex" alignItems="center" gap={1}>
+                    <Typography variant="h6" sx={{ fontWeight: 600 }}>
+                      {selectedSource.name}
+                    </Typography>
+                    {selectedSource.verified && <VerifiedIcon color="primary" />}
+                  </Box>
                   <Typography variant="body2" color="text.secondary">
-                    {selectedSource.handle} • {selectedSource.category}
+                    {selectedSource.handle} • {selectedSource.followers} followers
                   </Typography>
                 </Box>
               </Box>
             </DialogTitle>
+            
             <DialogContent>
               <Grid container spacing={3}>
                 <Grid item xs={12} md={6}>
                   <Typography variant="h6" gutterBottom>
-                    Sentiment Overview
+                    Sentiment Analysis
                   </Typography>
                   <Box mb={2}>
-                    <Typography variant="body2" color="text.secondary">
-                      Overall Sentiment Score
-                    </Typography>
-                    <Box display="flex" alignItems="center" mt={1}>
+                    <Box display="flex" alignItems="center" justifyContent="space-between" mb={1}>
+                      <Typography variant="body2" color="text.secondary">
+                        Overall Sentiment
+                      </Typography>
                       <Chip
                         icon={getSentimentIcon(selectedSource.sentiment_score)}
                         label={`${(selectedSource.sentiment_score * 100).toFixed(0)}%`}
                         color={getSentimentColor(selectedSource.sentiment_score)}
-                        size="medium"
                       />
                     </Box>
+                    <LinearProgress
+                      variant="determinate"
+                      value={Math.abs(selectedSource.sentiment_score * 100)}
+                      color={getSentimentColor(selectedSource.sentiment_score)}
+                      sx={{ height: 8, borderRadius: 4 }}
+                    />
                   </Box>
                   
                   <Box mb={2}>
-                    <Typography variant="body2" color="text.secondary">
-                      Bias Classification
+                    <Typography variant="body2" color="text.secondary" gutterBottom>
+                      Bias Level
                     </Typography>
                     <Chip
                       label={selectedSource.bias_level}
                       color={selectedSource.bias_level === 'Critical' ? 'error' : 
                              selectedSource.bias_level === 'Supportive' ? 'success' : 'warning'}
-                      size="medium"
                     />
                   </Box>
-
+                  
                   <Box mb={2}>
-                    <Typography variant="body2" color="text.secondary">
-                      Account Statistics
+                    <Typography variant="body2" color="text.secondary" gutterBottom>
+                      Category
                     </Typography>
-                    <Typography variant="body1">
-                      {selectedSource.followers} followers
-                    </Typography>
-                    <Typography variant="body2" color="text.secondary">
-                      {selectedSource.tweets_count} tweets analyzed
-                    </Typography>
-                    <Typography variant="body2" color="text.secondary">
-                      Last updated: {selectedSource.last_updated}
-                    </Typography>
+                    <Chip
+                      icon={getCategoryIcon(selectedSource.category)}
+                      label={selectedSource.category}
+                      color={getCategoryColor(selectedSource.category)}
+                    />
                   </Box>
-
-                  <Box>
+                </Grid>
+                
+                <Grid item xs={12} md={6}>
+                  <Typography variant="h6" gutterBottom>
+                    Recent Activity
+                  </Typography>
+                  <Typography variant="body2" color="text.secondary" gutterBottom>
+                    {selectedSource.tweets_count} tweets • {selectedSource.last_updated}
+                  </Typography>
+                  
+                  <Box mb={2}>
                     <Typography variant="body2" color="text.secondary" gutterBottom>
                       Top Hashtags
                     </Typography>
                     <Box display="flex" gap={1} flexWrap="wrap">
-                      {selectedSource.top_hashtags.map((hashtag, idx) => (
-                        <Chip
-                          key={idx}
-                          label={hashtag}
-                          size="small"
-                          variant="outlined"
-                        />
+                      {selectedSource.top_hashtags && selectedSource.top_hashtags.map((hashtag, idx) => (
+                        <Chip key={idx} label={hashtag} size="small" variant="outlined" />
                       ))}
                     </Box>
                   </Box>
                 </Grid>
-
-                <Grid item xs={12} md={6}>
+                
+                <Grid item xs={12}>
                   <Typography variant="h6" gutterBottom>
                     Recent Tweets
                   </Typography>
-                  <List dense>
-                    {selectedSource.recent_tweets.map((tweet, idx) => (
-                      <ListItem key={idx} sx={{ px: 0 }}>
+                  <List>
+                    {selectedSource.recent_tweets && selectedSource.recent_tweets.map((tweet, idx) => (
+                      <ListItem key={idx} divider>
                         <ListItemIcon>
                           <Chip
                             label={tweet.sentiment}
@@ -434,16 +393,7 @@ const TopTwitter = () => {
                         </ListItemIcon>
                         <ListItemText
                           primary={tweet.text}
-                          secondary={`${tweet.engagement.toLocaleString()} engagements • ${tweet.time}`}
-                          primaryTypographyProps={{ fontSize: '0.9rem' }}
-                          sx={{ 
-                            '& .MuiListItemText-primary': {
-                              display: '-webkit-box',
-                              WebkitLineClamp: 3,
-                              WebkitBoxOrient: 'vertical',
-                              overflow: 'hidden'
-                            }
-                          }}
+                          secondary={`${tweet.engagement.toLocaleString()} engagement • ${tweet.time}`}
                         />
                       </ListItem>
                     ))}
@@ -451,15 +401,9 @@ const TopTwitter = () => {
                 </Grid>
               </Grid>
             </DialogContent>
+            
             <DialogActions>
               <Button onClick={handleCloseDialog}>Close</Button>
-              <Button 
-                variant="contained" 
-                startIcon={<OpenInNewIcon />}
-                onClick={() => window.open(`https://twitter.com/${selectedSource.handle.substring(1)}`, '_blank')}
-              >
-                View Profile
-              </Button>
             </DialogActions>
           </>
         )}

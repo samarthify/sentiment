@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Box,
   Typography,
@@ -18,7 +18,9 @@ import {
   ListItemIcon,
   Avatar,
   LinearProgress,
-  Badge
+  Badge,
+  CircularProgress,
+  Alert
 } from '@mui/material';
 import {
   TrendingUp as TrendingUpIcon,
@@ -27,114 +29,50 @@ import {
   OpenInNew as OpenInNewIcon,
   Verified as VerifiedIcon,
   Tv as TvIcon,
-  LiveTv as LiveTvIcon,
-  Schedule as ScheduleIcon
+  LiveTv as LiveTvIcon
 } from '@mui/icons-material';
 import { motion } from 'framer-motion';
+import DataService from '../../services/DataService';
+
+// Import AuthContext with error handling
+let useAuth = null;
+try {
+  const authModule = require('../../contexts/AuthContext');
+  useAuth = authModule.useAuth;
+} catch (error) {
+  console.warn('AuthContext not available, using fallback');
+  useAuth = () => ({ accessToken: null });
+}
 
 const TopTelevision = () => {
   const [selectedSource, setSelectedSource] = useState(null);
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [topTelevision, setTopTelevision] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  
+  // Use the imported hook or fallback
+  const authContext = useAuth();
+  const accessToken = authContext?.accessToken || null;
 
-  // Mock data for top Nigerian TV channels
-  const topTelevision = [
-    {
-      name: 'Channels TV',
-      logo: '📺',
-      sentiment_score: 0.35,
-      bias_level: 'Supportive',
-      coverage_count: 28,
-      last_updated: '1 hour ago',
-      category: 'News Channel',
-      verified: true,
-      recent_programs: [
-        { title: 'Government Infrastructure Achievements', sentiment: 'positive', viewership: 2.5, time: '2 hours ago' },
-        { title: 'Economic Policy Analysis', sentiment: 'neutral', viewership: 1.8, time: '4 hours ago' },
-        { title: 'Security Situation Report', sentiment: 'positive', viewership: 2.1, time: '6 hours ago' }
-      ],
-      top_topics: ['#Infrastructure', '#EconomicPolicy', '#Security']
-    },
-    {
-      name: 'AIT (Africa Independent Television)',
-      logo: '📺',
-      sentiment_score: 0.25,
-      bias_level: 'Supportive',
-      coverage_count: 22,
-      last_updated: '2 hours ago',
-      category: 'News Channel',
-      verified: true,
-      recent_programs: [
-        { title: 'Agricultural Development Programs', sentiment: 'positive', viewership: 1.9, time: '3 hours ago' },
-        { title: 'Youth Employment Initiatives', sentiment: 'positive', viewership: 1.6, time: '5 hours ago' },
-        { title: 'Healthcare System Improvements', sentiment: 'neutral', viewership: 1.4, time: '7 hours ago' }
-      ],
-      top_topics: ['#Agriculture', '#YouthEmployment', '#Healthcare']
-    },
-    {
-      name: 'NTA (Nigerian Television Authority)',
-      logo: '📺',
-      sentiment_score: 0.45,
-      bias_level: 'Supportive',
-      coverage_count: 35,
-      last_updated: '30 minutes ago',
-      category: 'Government Channel',
-      verified: true,
-      recent_programs: [
-        { title: 'Presidential Address on Economic Reforms', sentiment: 'positive', viewership: 3.2, time: '1 hour ago' },
-        { title: 'Infrastructure Development Progress', sentiment: 'positive', viewership: 2.8, time: '3 hours ago' },
-        { title: 'Security Measures Implementation', sentiment: 'positive', viewership: 2.5, time: '5 hours ago' }
-      ],
-      top_topics: ['#PresidentialAddress', '#Infrastructure', '#Security']
-    },
-    {
-      name: 'TVC News',
-      logo: '📺',
-      sentiment_score: -0.15,
-      bias_level: 'Critical',
-      coverage_count: 18,
-      last_updated: '4 hours ago',
-      category: 'News Channel',
-      verified: true,
-      recent_programs: [
-        { title: 'Fuel Subsidy Removal Impact', sentiment: 'negative', viewership: 2.1, time: '2 hours ago' },
-        { title: 'Economic Challenges Analysis', sentiment: 'negative', viewership: 1.7, time: '4 hours ago' },
-        { title: 'Exchange Rate Policy Concerns', sentiment: 'negative', viewership: 1.9, time: '6 hours ago' }
-      ],
-      top_topics: ['#FuelSubsidy', '#EconomicChallenges', '#ExchangeRate']
-    },
-    {
-      name: 'Arise News',
-      logo: '📺',
-      sentiment_score: -0.25,
-      bias_level: 'Critical',
-      coverage_count: 15,
-      last_updated: '5 hours ago',
-      category: 'News Channel',
-      verified: true,
-      recent_programs: [
-        { title: 'Economic Policy Criticism', sentiment: 'negative', viewership: 1.5, time: '3 hours ago' },
-        { title: 'Government Accountability Issues', sentiment: 'negative', viewership: 1.3, time: '5 hours ago' },
-        { title: 'Social Welfare Programs', sentiment: 'neutral', viewership: 1.1, time: '7 hours ago' }
-      ],
-      top_topics: ['#EconomicPolicy', '#Accountability', '#SocialWelfare']
-    },
-    {
-      name: 'Silverbird Television',
-      logo: '📺',
-      sentiment_score: 0.05,
-      bias_level: 'Neutral',
-      coverage_count: 12,
-      last_updated: '6 hours ago',
-      category: 'Entertainment Channel',
-      verified: true,
-      recent_programs: [
-        { title: 'Entertainment Industry Development', sentiment: 'positive', viewership: 1.2, time: '4 hours ago' },
-        { title: 'Cultural Programs and Tourism', sentiment: 'positive', viewership: 0.9, time: '6 hours ago' },
-        { title: 'Youth Development Initiatives', sentiment: 'neutral', viewership: 1.0, time: '8 hours ago' }
-      ],
-      top_topics: ['#Entertainment', '#Culture', '#YouthDevelopment']
-    }
-  ];
+  useEffect(() => {
+    const fetchTelevision = async () => {
+      try {
+        setLoading(true);
+        setError(null);
+        const data = await DataService.getTelevisionSources(accessToken);
+        setTopTelevision(data);
+      } catch (err) {
+        console.error('Error fetching television sources:', err);
+        setError(err.message || 'Failed to load television sources');
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    // Always try to fetch data, even without access token (for testing)
+    fetchTelevision();
+  }, [accessToken]);
 
   const getSentimentColor = (score) => {
     if (score >= 0.3) return 'success';
@@ -175,6 +113,43 @@ const TopTelevision = () => {
     setDialogOpen(false);
     setSelectedSource(null);
   };
+
+  if (loading) {
+    return (
+      <Box display="flex" justifyContent="center" alignItems="center" minHeight="400px">
+        <CircularProgress />
+      </Box>
+    );
+  }
+
+  if (error) {
+    return (
+      <Box>
+        <Typography variant="h5" gutterBottom sx={{ fontWeight: 600, mb: 3 }}>
+          📺 Top Television Channels Analysis
+        </Typography>
+        <Alert severity="error" sx={{ mb: 2 }}>
+          {error}
+        </Alert>
+        <Typography variant="body2" color="text.secondary">
+          Unable to load television sources. Please try again later.
+        </Typography>
+      </Box>
+    );
+  }
+
+  if (topTelevision.length === 0) {
+    return (
+      <Box>
+        <Typography variant="h5" gutterBottom sx={{ fontWeight: 600, mb: 3 }}>
+          📺 Top Television Channels Analysis
+        </Typography>
+        <Typography variant="body2" color="text.secondary">
+          No television sources found in the current data.
+        </Typography>
+      </Box>
+    );
+  }
 
   return (
     <Box>
@@ -286,7 +261,7 @@ const TopTelevision = () => {
                       Top Topics
                     </Typography>
                     <Box display="flex" gap={0.5} flexWrap="wrap">
-                      {channel.top_topics.slice(0, 2).map((topic, idx) => (
+                      {channel.top_topics && channel.top_topics.slice(0, 2).map((topic, idx) => (
                         <Chip
                           key={idx}
                           label={topic}
@@ -385,7 +360,7 @@ const TopTelevision = () => {
                       Top Topics
                     </Typography>
                     <Box display="flex" gap={1} flexWrap="wrap">
-                      {selectedSource.top_topics.map((topic, idx) => (
+                      {selectedSource.top_topics && selectedSource.top_topics.map((topic, idx) => (
                         <Chip
                           key={idx}
                           label={topic}
@@ -402,7 +377,7 @@ const TopTelevision = () => {
                     Recent Programs
                   </Typography>
                   <List dense>
-                    {selectedSource.recent_programs.map((program, idx) => (
+                    {selectedSource.recent_programs && selectedSource.recent_programs.map((program, idx) => (
                       <ListItem key={idx} sx={{ px: 0 }}>
                         <ListItemIcon>
                           <Chip

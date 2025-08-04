@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Box,
   Typography,
@@ -17,7 +17,9 @@ import {
   ListItemText,
   ListItemIcon,
   Avatar,
-  LinearProgress
+  LinearProgress,
+  CircularProgress,
+  Alert
 } from '@mui/material';
 import {
   TrendingUp as TrendingUpIcon,
@@ -26,104 +28,47 @@ import {
   OpenInNew as OpenInNewIcon
 } from '@mui/icons-material';
 import { motion } from 'framer-motion';
+import DataService from '../../services/DataService';
+
+// Import AuthContext with error handling
+let useAuth = null;
+try {
+  const authModule = require('../../contexts/AuthContext');
+  useAuth = authModule.useAuth;
+} catch (error) {
+  console.warn('AuthContext not available, using fallback');
+  useAuth = () => ({ accessToken: null });
+}
 
 const TopNewspapers = () => {
   const [selectedSource, setSelectedSource] = useState(null);
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [topNewspapers, setTopNewspapers] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  
+  // Use the imported hook or fallback
+  const authContext = useAuth();
+  const accessToken = authContext?.accessToken || null;
 
-  // Mock data for top Nigerian newspapers
-  const topNewspapers = [
-    {
-      name: 'The Guardian Nigeria',
-      logo: '📰',
-      sentiment_score: -0.65,
-      bias_level: 'Critical',
-      coverage_count: 45,
-      last_updated: '2 hours ago',
-      top_headlines: [
-        'Fuel Subsidy Removal: Economic Impact Analysis',
-        'Exchange Rate Policy Under Scrutiny',
-        'Security Measures in Northern States'
-      ],
-      recent_articles: [
-        { title: 'Economic Reforms Face Public Backlash', sentiment: 'negative', date: '2024-01-15' },
-        { title: 'Infrastructure Development Progress', sentiment: 'positive', date: '2024-01-14' },
-        { title: 'Healthcare Policy Implementation', sentiment: 'neutral', date: '2024-01-13' }
-      ]
-    },
-    {
-      name: 'Vanguard News',
-      logo: '📰',
-      sentiment_score: -0.58,
-      bias_level: 'Critical',
-      coverage_count: 38,
-      last_updated: '1 hour ago',
-      top_headlines: [
-        'Government Economic Policies: Public Reaction',
-        'Education Reform Initiatives',
-        'Agricultural Development Programs'
-      ],
-      recent_articles: [
-        { title: 'Youth Employment Programs Launched', sentiment: 'positive', date: '2024-01-15' },
-        { title: 'Anti-Corruption Measures Announced', sentiment: 'positive', date: '2024-01-14' },
-        { title: 'Economic Challenges Persist', sentiment: 'negative', date: '2024-01-13' }
-      ]
-    },
-    {
-      name: 'Punch Newspapers',
-      logo: '📰',
-      sentiment_score: -0.42,
-      bias_level: 'Critical',
-      coverage_count: 32,
-      last_updated: '3 hours ago',
-      top_headlines: [
-        'Fuel Price Increase: Consumer Impact',
-        'Security Situation in South-East',
-        'Educational Infrastructure Development'
-      ],
-      recent_articles: [
-        { title: 'Digital Economy Initiatives', sentiment: 'positive', date: '2024-01-15' },
-        { title: 'Healthcare System Improvements', sentiment: 'neutral', date: '2024-01-14' },
-        { title: 'Economic Policy Criticism', sentiment: 'negative', date: '2024-01-13' }
-      ]
-    },
-    {
-      name: 'ThisDay Live',
-      logo: '📰',
-      sentiment_score: 0.15,
-      bias_level: 'Supportive',
-      coverage_count: 28,
-      last_updated: '4 hours ago',
-      top_headlines: [
-        'Government Achievements in Infrastructure',
-        'Economic Recovery Indicators',
-        'Security Improvements in Key Regions'
-      ],
-      recent_articles: [
-        { title: 'Infrastructure Development Success', sentiment: 'positive', date: '2024-01-15' },
-        { title: 'Economic Growth Projections', sentiment: 'positive', date: '2024-01-14' },
-        { title: 'Security Measures Effectiveness', sentiment: 'positive', date: '2024-01-13' }
-      ]
-    },
-    {
-      name: 'Premium Times Nigeria',
-      logo: '📰',
-      sentiment_score: -0.35,
-      bias_level: 'Critical',
-      coverage_count: 25,
-      last_updated: '5 hours ago',
-      top_headlines: [
-        'Transparency in Government Spending',
-        'Human Rights Issues in Focus',
-        'Economic Policy Transparency'
-      ],
-      recent_articles: [
-        { title: 'Government Accountability Measures', sentiment: 'neutral', date: '2024-01-15' },
-        { title: 'Human Rights Protection', sentiment: 'positive', date: '2024-01-14' },
-        { title: 'Economic Policy Concerns', sentiment: 'negative', date: '2024-01-13' }
-      ]
-    }
-  ];
+  useEffect(() => {
+    const fetchNewspapers = async () => {
+      try {
+        setLoading(true);
+        setError(null);
+        const data = await DataService.getNewspaperSources(accessToken);
+        setTopNewspapers(data);
+      } catch (err) {
+        console.error('Error fetching newspaper sources:', err);
+        setError(err.message || 'Failed to load newspaper sources');
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    // Always try to fetch data, even without access token (for testing)
+    fetchNewspapers();
+  }, [accessToken]);
 
   const getSentimentColor = (score) => {
     if (score >= 0.3) return 'success';
@@ -146,6 +91,43 @@ const TopNewspapers = () => {
     setDialogOpen(false);
     setSelectedSource(null);
   };
+
+  if (loading) {
+    return (
+      <Box display="flex" justifyContent="center" alignItems="center" minHeight="400px">
+        <CircularProgress />
+      </Box>
+    );
+  }
+
+  if (error) {
+    return (
+      <Box>
+        <Typography variant="h5" gutterBottom sx={{ fontWeight: 600, mb: 3 }}>
+          📰 Top Newspapers Analysis
+        </Typography>
+        <Alert severity="error" sx={{ mb: 2 }}>
+          {error}
+        </Alert>
+        <Typography variant="body2" color="text.secondary">
+          Unable to load newspaper sources. Please try again later.
+        </Typography>
+      </Box>
+    );
+  }
+
+  if (topNewspapers.length === 0) {
+    return (
+      <Box>
+        <Typography variant="h5" gutterBottom sx={{ fontWeight: 600, mb: 3 }}>
+          📰 Top Newspapers Analysis
+        </Typography>
+        <Typography variant="body2" color="text.secondary">
+          No newspaper sources found in the current data.
+        </Typography>
+      </Box>
+    );
+  }
 
   return (
     <Box>
@@ -186,9 +168,9 @@ const TopNewspapers = () => {
                         </Typography>
                       </Box>
                     </Box>
-                                         <IconButton size="small">
-                       <OpenInNewIcon />
-                     </IconButton>
+                    <IconButton size="small">
+                      <OpenInNewIcon />
+                    </IconButton>
                   </Box>
 
                   <Box mb={2}>
@@ -227,7 +209,7 @@ const TopNewspapers = () => {
                     <Typography variant="body2" color="text.secondary" gutterBottom>
                       Top Headlines
                     </Typography>
-                    {newspaper.top_headlines.slice(0, 2).map((headline, idx) => (
+                    {newspaper.top_headlines && newspaper.top_headlines.slice(0, 2).map((headline, idx) => (
                       <Typography 
                         key={idx} 
                         variant="body2" 
@@ -323,7 +305,7 @@ const TopNewspapers = () => {
                     Recent Articles
                   </Typography>
                   <List dense>
-                    {selectedSource.recent_articles.map((article, idx) => (
+                    {selectedSource.recent_articles && selectedSource.recent_articles.map((article, idx) => (
                       <ListItem key={idx} sx={{ px: 0 }}>
                         <ListItemIcon>
                           <Chip
