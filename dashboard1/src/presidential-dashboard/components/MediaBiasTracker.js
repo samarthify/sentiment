@@ -389,10 +389,22 @@ const MediaBiasTracker = () => {
                           sx={{
                             color: 'white',
                             fontWeight: 'bold',
-                            textShadow: '1px 1px 2px rgba(0,0,0,0.5)'
+                            textShadow: '1px 1px 2px rgba(0,0,0,0.5)',
+                            fontSize: '0.65rem',
+                            lineHeight: 1,
+                            textAlign: 'center',
+                            wordBreak: 'break-word',
+                            overflow: 'hidden',
+                            display: '-webkit-box',
+                            WebkitLineClamp: 2,
+                            WebkitBoxOrient: 'vertical',
+                            maxWidth: '100%',
+                            padding: '2px'
                           }}
                         >
-                          {source.name.split(' ')[0]}
+                          {source.name.length > 8 
+                            ? source.name.substring(0, 8) + '...'
+                            : source.name}
                         </Typography>
                       </Box>
                     </Tooltip>
