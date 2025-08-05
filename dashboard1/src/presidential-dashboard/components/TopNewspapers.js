@@ -382,10 +382,6 @@ const TopNewspapers = () => {
       >
         {selectedArticle && (
           <>
-            {/* Debug info - remove this later */}
-            <Box sx={{ p: 2, backgroundColor: 'yellow', fontSize: '12px' }}>
-              Debug: {JSON.stringify(selectedArticle, null, 2)}
-            </Box>
             <DialogTitle>
               <Box display="flex" alignItems="center" justifyContent="space-between">
                 <Box display="flex" alignItems="center">
