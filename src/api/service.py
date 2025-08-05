@@ -1034,9 +1034,9 @@ async def get_newspaper_sources(db: Session = Depends(get_db)):
             else:
                 bias_level = "Neutral"
             
-            # Get recent articles for this source
+            # Get recent articles for this source with detailed information
             recent_articles_query = text("""
-                SELECT title, sentiment_label, date
+                SELECT title, sentiment_label, sentiment_score, sentiment_justification, date, text, url, source_name, platform
                 FROM sentiment_data 
                 WHERE run_timestamp = :run_timestamp 
                 AND (LOWER(source_name) LIKE :source_pattern OR LOWER(source) LIKE :source_pattern OR LOWER(platform) LIKE :source_pattern)
@@ -1055,7 +1055,13 @@ async def get_newspaper_sources(db: Session = Depends(get_db)):
                 recent_articles.append({
                     "title": article.title or "No title available",
                     "sentiment": article.sentiment_label or "neutral",
-                    "date": article.date.isoformat() if article.date else None
+                    "sentiment_score": float(article.sentiment_score) if article.sentiment_score else 0.0,
+                    "sentiment_justification": article.sentiment_justification or "No AI justification available",
+                    "date": article.date.isoformat() if article.date else None,
+                    "text": article.text or "No content available",
+                    "url": article.url or None,
+                    "source_name": article.source_name or "Unknown Source",
+                    "platform": article.platform or "Unknown Platform"
                 })
             
             newspapers.append({
