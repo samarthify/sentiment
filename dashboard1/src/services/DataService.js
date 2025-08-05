@@ -1276,6 +1276,45 @@ class DataService {
       return [];
     }
   }
+
+  async getPolicyImpactData(accessToken) {
+    const apiUrl = process.env.REACT_APP_API_URL || 'http://localhost:8000';
+    const endpoint = `${apiUrl}/policy-impact`;
+    console.log(`Fetching policy impact data from: ${endpoint}`);
+
+    try {
+      const headers = { 'Content-Type': 'application/json' };
+      // Only add authorization header if accessToken is provided
+      if (accessToken) {
+        headers['Authorization'] = `Bearer ${accessToken}`;
+      }
+
+      const response = await fetch(endpoint, { headers });
+      
+      if (!response.ok) {
+        let errorBody = `Failed to fetch policy impact data: ${response.status} ${response.statusText}`;
+        try {
+          const errorJson = await response.json();
+          errorBody = errorJson.detail || errorBody;
+        } catch(e) { /* Ignore if not JSON */ }
+        throw new Error(errorBody);
+      }
+      
+      const result = await response.json();
+      
+      if (result.status === 'success' && result.data) {
+        console.log('Policy impact data loaded:', result.data.length);
+        return result;
+      } else {
+        console.error('API did not return successful status or data:', result);
+        return { status: 'error', data: [] };
+      }
+      
+    } catch (error) {
+      console.error('Error fetching policy impact data:', error);
+      return { status: 'error', data: [] };
+    }
+  }
 }
 
 const dataService = new DataService();

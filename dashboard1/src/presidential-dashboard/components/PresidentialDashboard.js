@@ -34,7 +34,9 @@ import {
   Info,
   Twitter as TwitterIcon,
   Tv as TvIcon,
-  LocationOn as LocationIcon
+  LocationOn as LocationIcon,
+  Summarize as SummarizeIcon,
+  Psychology as PsychologyIcon
 } from '@mui/icons-material';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useTranslation } from 'react-i18next';
@@ -50,6 +52,8 @@ import MediaSourcesOverview from './MediaSourcesOverview';
 
 import ContextualSentimentAnalysis from './ContextualSentimentAnalysis';
 import GeographicalDistribution from './GeographicalDistribution';
+import AutoSummary from '../../components/AutoSummary';
+import EmotionalSpectrum from '../../components/EmotionalSpectrum';
 
 // Import existing components for detailed views
 import SentimentOverview from '../../components/SentimentOverview';
@@ -58,15 +62,18 @@ import SentimentTable from '../../components/SentimentTable';
 
 // Import data service
 import DataService from '../../services/DataService';
+import { useAuth } from '../../contexts/AuthContext.tsx';
 
 const PresidentialDashboard = ({ userRole = 'president' }) => {
   const { t } = useTranslation();
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('md'));
+  const { accessToken } = useAuth();
   
   const [activeTab, setActiveTab] = useState(0);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [data, setData] = useState(null);
+  const [originalData, setOriginalData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [alerts, setAlerts] = useState([]);
   const [showAlert, setShowAlert] = useState(false);
@@ -76,7 +83,11 @@ const PresidentialDashboard = ({ userRole = 'president' }) => {
     const loadPresidentialData = async () => {
       try {
         setLoading(true);
-        const processedData = await DataService.loadData();
+        
+        const processedData = await DataService.loadData(accessToken);
+        
+        // Store original data for AI components
+        setOriginalData(processedData);
         
         // Transform data to presidential dashboard format
         const presidentialData = transformToPresidentialFormat(processedData);
@@ -105,13 +116,19 @@ const PresidentialDashboard = ({ userRole = 'president' }) => {
       }
     };
 
-    loadPresidentialData();
+    if (accessToken) {
+      loadPresidentialData();
+    }
 
     // Set up periodic data refresh (every 5 minutes)
-    const refreshInterval = setInterval(loadPresidentialData, 5 * 60 * 1000);
+    const refreshInterval = setInterval(() => {
+      if (accessToken) {
+        loadPresidentialData();
+      }
+    }, 5 * 60 * 1000);
 
     return () => clearInterval(refreshInterval);
-  }, []);
+  }, [accessToken]);
 
   const transformToPresidentialFormat = (processedData) => {
     const { rawData, metrics } = processedData;
@@ -241,7 +258,12 @@ const PresidentialDashboard = ({ userRole = 'president' }) => {
   const handleRefresh = async () => {
     try {
       setLoading(true);
-      const processedData = await DataService.loadData();
+      
+      const processedData = await DataService.loadData(accessToken);
+      
+      // Store original data for AI components
+      setOriginalData(processedData);
+      
       const presidentialData = transformToPresidentialFormat(processedData);
       setData(presidentialData);
       
@@ -275,11 +297,16 @@ const PresidentialDashboard = ({ userRole = 'president' }) => {
           label: 'Policy Impact',
           icon: <PolicyIcon />,
           component: <PolicyImpactTracker data={data} loading={loading} />
+        },
+        {
+          label: 'AI Summary',
+          icon: <SummarizeIcon />,
+          component: <AutoSummary data={originalData} />
         }
       );
     }
 
-    if (userRole === 'media_team' || userRole === 'policy_analyst' || userRole === 'admin') {
+    if (userRole === 'media_team') {
       baseTabs.push(
         {
           label: 'Media Overview',
@@ -306,7 +333,46 @@ const PresidentialDashboard = ({ userRole = 'president' }) => {
           icon: <NewspaperIcon />,
           component: <MediaBiasTracker data={data} loading={loading} />
         },
+        {
+          label: 'AI Summary',
+          icon: <SummarizeIcon />,
+          component: <AutoSummary data={originalData} />
+        },
+        {
+          label: 'Emotional Spectrum',
+          icon: <PsychologyIcon />,
+          component: <EmotionalSpectrum data={originalData} />
+        }
+      );
+    }
 
+    if (userRole === 'policy_analyst' || userRole === 'admin') {
+      baseTabs.push(
+        {
+          label: 'Media Overview',
+          icon: <DashboardIcon />,
+          component: <MediaSourcesOverview />
+        },
+        {
+          label: 'Top Newspapers',
+          icon: <NewspaperIcon />,
+          component: <TopNewspapers />
+        },
+        {
+          label: 'Top Television',
+          icon: <TvIcon />,
+          component: <TopTelevision />
+        },
+        {
+          label: 'Top Twitter',
+          icon: <TwitterIcon />,
+          component: <TopTwitter />
+        },
+        {
+          label: 'Media Bias',
+          icon: <NewspaperIcon />,
+          component: <MediaBiasTracker data={data} loading={loading} />
+        },
         {
           label: 'Detailed Analytics',
           icon: <TrendingUpIcon />,
@@ -370,16 +436,47 @@ const PresidentialDashboard = ({ userRole = 'president' }) => {
         onClose={() => setDrawerOpen(false)}
         sx={{
           display: { xs: 'block', md: 'none' },
-          '& .MuiDrawer-paper': { width: 240 }
+          '& .MuiDrawer-paper': { 
+            width: 240,
+            background: 'linear-gradient(135deg, rgba(255,255,255,0.95) 0%, rgba(255,255,255,0.85) 100%)',
+            backdropFilter: 'blur(20px)',
+            borderRight: '1px solid rgba(255,255,255,0.3)',
+            boxShadow: '4px 0 20px rgba(0,0,0,0.1)',
+            '&::before': {
+              content: '""',
+              position: 'absolute',
+              top: 0,
+              left: 0,
+              right: 0,
+              bottom: 0,
+              background: 'linear-gradient(135deg, rgba(255,255,255,0.1) 0%, rgba(255,255,255,0.05) 100%)',
+              pointerEvents: 'none',
+            }
+          }
         }}
       >
-        <Box sx={{ p: 2 }}>
-          <Typography variant="h6" color="primary">
-            Presidential Dashboard
+        <Box sx={{ 
+          p: 2,
+          background: 'linear-gradient(135deg, rgba(99, 102, 241, 0.1) 0%, rgba(168, 85, 247, 0.1) 100%)',
+          backdropFilter: 'blur(10px)',
+          borderBottom: '1px solid rgba(255,255,255,0.2)',
+        }}>
+          <Typography 
+            variant="h6" 
+            sx={{
+              fontWeight: 700,
+              background: 'linear-gradient(135deg, #1a2035 0%, #2d3748 100%)',
+              backgroundClip: 'text',
+              WebkitBackgroundClip: 'text',
+              WebkitTextFillColor: 'transparent',
+              letterSpacing: '0.5px'
+            }}
+          >
+            Leader's Dashboard
           </Typography>
         </Box>
-        <Divider />
-        <List>
+        <Divider sx={{ backgroundColor: 'rgba(255,255,255,0.2)' }} />
+        <List sx={{ background: 'transparent' }}>
           {tabs.map((tab, index) => (
             <ListItem
               key={index}
@@ -389,9 +486,39 @@ const PresidentialDashboard = ({ userRole = 'president' }) => {
                 setActiveTab(index);
                 setDrawerOpen(false);
               }}
+              sx={{
+                margin: '4px 8px',
+                borderRadius: '12px',
+                transition: 'all 0.3s ease',
+                '&.Mui-selected': {
+                  background: 'linear-gradient(135deg, rgba(99, 102, 241, 0.15) 0%, rgba(168, 85, 247, 0.15) 100%)',
+                  backdropFilter: 'blur(10px)',
+                  border: '1px solid rgba(99, 102, 241, 0.2)',
+                  '&:hover': {
+                    background: 'linear-gradient(135deg, rgba(99, 102, 241, 0.2) 0%, rgba(168, 85, 247, 0.2) 100%)',
+                  }
+                },
+                '&:hover': {
+                  background: 'rgba(99, 102, 241, 0.05)',
+                }
+              }}
             >
-              <ListItemIcon>{tab.icon}</ListItemIcon>
-              <ListItemText primary={tab.label} />
+              <ListItemIcon sx={{ 
+                color: activeTab === index ? '#6366f1' : 'rgba(0,0,0,0.7)',
+                transition: 'color 0.3s ease'
+              }}>
+                {tab.icon}
+              </ListItemIcon>
+              <ListItemText 
+                primary={tab.label} 
+                sx={{
+                  '& .MuiTypography-root': {
+                    fontWeight: activeTab === index ? 600 : 500,
+                    color: activeTab === index ? '#6366f1' : 'rgba(0,0,0,0.8)',
+                    transition: 'all 0.3s ease'
+                  }
+                }}
+              />
             </ListItem>
           ))}
         </List>
@@ -399,47 +526,26 @@ const PresidentialDashboard = ({ userRole = 'president' }) => {
 
       {/* Main Content */}
       <Box sx={{ flexGrow: 1, display: 'flex', flexDirection: 'column' }}>
-        {/* Header */}
-        <AppBar position="static" elevation={1}>
-          <Toolbar>
-            {isMobile && (
-              <IconButton
-                edge="start"
-                color="inherit"
-                onClick={() => setDrawerOpen(true)}
-                sx={{ mr: 2 }}
-              >
-                <MenuIcon />
-              </IconButton>
-            )}
-            
-            <Typography variant="h6" sx={{ flexGrow: 1 }}>
-              Nigeria Presidential Sentiment Dashboard
-            </Typography>
-
-            <Box display="flex" alignItems="center" gap={2}>
-              <Chip
-                label={userRole.replace('_', ' ').toUpperCase()}
-                color="secondary"
-                size="small"
-              />
-              <IconButton color="inherit">
-                <NotificationsIcon />
-              </IconButton>
-              <IconButton color="inherit">
-                <SettingsIcon />
-              </IconButton>
-              <IconButton color="inherit">
-                <AccountCircle />
-              </IconButton>
-            </Box>
-          </Toolbar>
-        </AppBar>
 
         {/* Desktop Tabs */}
         {!isMobile && (
-          <Box sx={{ borderBottom: 1, borderColor: 'divider', bgcolor: 'background.paper' }}>
-            <Container maxWidth="xl">
+          <Box sx={{ 
+            background: 'linear-gradient(135deg, rgba(255,255,255,0.9) 0%, rgba(255,255,255,0.7) 100%)',
+            backdropFilter: 'blur(15px)',
+            borderBottom: '1px solid rgba(255,255,255,0.3)',
+            boxShadow: '0 2px 10px rgba(0,0,0,0.05)',
+            '&::before': {
+              content: '""',
+              position: 'absolute',
+              top: 0,
+              left: 0,
+              right: 0,
+              bottom: 0,
+              background: 'linear-gradient(135deg, rgba(255,255,255,0.1) 0%, rgba(255,255,255,0.05) 100%)',
+              pointerEvents: 'none',
+            }
+          }}>
+            <Container maxWidth="xl" sx={{ px: 0 }}>
               <Tabs
                 value={activeTab}
                 onChange={handleTabChange}
@@ -449,7 +555,27 @@ const PresidentialDashboard = ({ userRole = 'president' }) => {
                   '& .MuiTab-root': {
                     minHeight: 64,
                     textTransform: 'none',
-                    fontSize: '0.9rem'
+                    fontSize: '0.9rem',
+                    color: 'rgba(0,0,0,0.7)',
+                    fontWeight: 500,
+                    transition: 'all 0.3s ease',
+                    '&.Mui-selected': {
+                      color: '#6366f1',
+                      fontWeight: 600,
+                      background: 'rgba(99, 102, 241, 0.1)',
+                      borderRadius: '8px 8px 0 0',
+                      backdropFilter: 'blur(10px)',
+                    },
+                    '&:hover': {
+                      backgroundColor: 'rgba(99, 102, 241, 0.05)',
+                      color: '#6366f1',
+                    }
+                  },
+                  '& .MuiTabs-indicator': {
+                    backgroundColor: '#6366f1',
+                    height: '3px',
+                    borderRadius: '2px',
+                    boxShadow: '0 2px 8px rgba(99, 102, 241, 0.3)',
                   }
                 }}
               >
@@ -470,8 +596,23 @@ const PresidentialDashboard = ({ userRole = 'president' }) => {
         )}
 
         {/* Content Area */}
-        <Box sx={{ flexGrow: 1, bgcolor: 'grey.50' }}>
-          <Container maxWidth="xl" sx={{ py: 3 }}>
+        <Box sx={{ 
+          flexGrow: 1, 
+          background: 'linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%)',
+          minHeight: '100vh',
+          position: 'relative',
+          '&::before': {
+            content: '""',
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            background: 'radial-gradient(circle at 20% 80%, rgba(99, 102, 241, 0.05) 0%, transparent 50%), radial-gradient(circle at 80% 20%, rgba(168, 85, 247, 0.05) 0%, transparent 50%)',
+            pointerEvents: 'none',
+          }
+        }}>
+          <Container maxWidth="xl" sx={{ py: 3, pl: 0, pr: 0, position: 'relative', zIndex: 1 }}>
             <AnimatePresence mode="wait">
               <motion.div
                 key={activeTab}
@@ -513,18 +654,38 @@ const PresidentialDashboard = ({ userRole = 'president' }) => {
             left: 0,
             right: 0,
             zIndex: 9999,
-            bgcolor: 'error.main',
+            background: 'linear-gradient(135deg, rgba(239, 68, 68, 0.95) 0%, rgba(220, 38, 38, 0.95) 100%)',
+            backdropFilter: 'blur(20px)',
             color: 'white',
-            py: 1,
+            py: 1.5,
             px: 2,
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            gap: 1
+            gap: 1,
+            borderBottom: '1px solid rgba(255,255,255,0.2)',
+            boxShadow: '0 4px 20px rgba(239, 68, 68, 0.3)',
+            '&::before': {
+              content: '""',
+              position: 'absolute',
+              top: 0,
+              left: 0,
+              right: 0,
+              bottom: 0,
+              background: 'linear-gradient(135deg, rgba(255,255,255,0.1) 0%, rgba(255,255,255,0.05) 100%)',
+              pointerEvents: 'none',
+            }
           }}
         >
-          <Warning />
-          <Typography variant="body2" fontWeight="bold">
+          <Warning sx={{ filter: 'drop-shadow(0 2px 4px rgba(0,0,0,0.2))' }} />
+          <Typography 
+            variant="body2" 
+            fontWeight="bold"
+            sx={{
+              textShadow: '0 2px 4px rgba(0,0,0,0.2)',
+              letterSpacing: '0.5px'
+            }}
+          >
             CRITICAL ALERT: Immediate attention required
           </Typography>
         </Box>

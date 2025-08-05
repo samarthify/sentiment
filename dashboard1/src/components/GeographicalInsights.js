@@ -11,21 +11,15 @@ import {
   Cell,
   PieChart,
   Pie,
-  RadarChart,
-  PolarGrid,
-  PolarAngleAxis,
-  PolarRadiusAxis,
-  Radar,
   Tooltip,
 } from 'recharts';
 import { motion } from 'framer-motion';
-import { alpha } from '@mui/material/styles';
+
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import InfoIcon from '@mui/icons-material/Info';
 
 const GeographicalInsights = ({ data }) => {
-  const theme = useTheme();
   const navigate = useNavigate();
   const { t } = useTranslation();
 
@@ -342,37 +336,7 @@ const GeographicalInsights = ({ data }) => {
   // Log the final distribution for verification
   console.log('Source Distribution:', sourceDistribution);
 
-  // Format data for media sentiment chart
-  const mediaSentimentData = [
-    {
-      name: t('geographicalInsights.sourceTypes.socialMedia'),
-      positive: 35,
-      neutral: 45,
-      negative: 20,
-      total: 100
-    },
-    {
-      name: t('geographicalInsights.sourceTypes.news'),
-      positive: 30,
-      neutral: 50,
-      negative: 20,
-      total: 100
-    },
-    {
-      name: t('geographicalInsights.sourceTypes.tv'),
-      positive: 40,
-      neutral: 40,
-      negative: 20,
-      total: 100
-    },
-    {
-      name: t('geographicalInsights.sourceTypes.other'),
-      positive: 25,
-      neutral: 55,
-      negative: 20,
-      total: 100
-    }
-  ];
+
 
   const CustomTooltip = ({ active, payload }) => {
     if (active && payload && payload.length) {

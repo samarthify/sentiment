@@ -10,8 +10,7 @@ import {
   IconButton,
   Tooltip,
   CircularProgress,
-  Paper,
-  Divider
+
 } from '@mui/material';
 import {
   TrendingUp,
@@ -20,22 +19,30 @@ import {
   CheckCircle,
   Info,
   Refresh,
-  Notifications,
   Visibility,
   Speed,
   Psychology
 } from '@mui/icons-material';
 import { motion } from 'framer-motion';
 import { useTranslation } from 'react-i18next';
+import { useNavigate } from 'react-router-dom';
 
 const ExecutiveSummary = ({ data, loading, onRefresh }) => {
-  const { t } = useTranslation();
   const [currentTime, setCurrentTime] = useState(new Date());
+  const navigate = useNavigate();
 
   useEffect(() => {
     const timer = setInterval(() => setCurrentTime(new Date()), 60000);
     return () => clearInterval(timer);
   }, []);
+
+  const handleSentimentClick = (sentiment) => {
+    navigate('/sentiment-data', {
+      state: {
+        sentimentFilter: sentiment
+      }
+    });
+  };
 
   const getOverallSentiment = () => {
     console.log('ExecutiveSummary received data:', data);
@@ -156,7 +163,7 @@ const ExecutiveSummary = ({ data, loading, onRefresh }) => {
       <Box display="flex" justifyContent="space-between" alignItems="center" mb={3}>
         <Box>
           <Typography variant="h4" fontWeight="bold" color="primary">
-            Nigeria Presidential Sentiment Dashboard
+            Leader's Sentiment Dashboard
           </Typography>
           <Typography variant="body2" color="text.secondary">
             Last updated: {currentTime.toLocaleString()}
@@ -259,6 +266,15 @@ const ExecutiveSummary = ({ data, loading, onRefresh }) => {
                       color={getSentimentColor(key)}
                       size="small"
                       variant="outlined"
+                      onClick={() => handleSentimentClick(key)}
+                      sx={{
+                        cursor: 'pointer',
+                        '&:hover': {
+                          transform: 'scale(1.05)',
+                          boxShadow: '0 2px 8px rgba(0,0,0,0.15)',
+                        },
+                        transition: 'all 0.2s ease-in-out'
+                      }}
                     />
                   ))}
                 </Box>
@@ -293,95 +309,7 @@ const ExecutiveSummary = ({ data, loading, onRefresh }) => {
           </motion.div>
         </Grid>
 
-        {/* Top Concerns */}
-        <Grid item xs={12} lg={6}>
-          <motion.div
-            initial={{ opacity: 0, x: -20 }}
-            animate={{ opacity: 1, x: 0 }}
-            transition={{ duration: 0.5, delay: 0.4 }}
-          >
-            <Card elevation={3}>
-              <CardContent>
-                <Typography variant="h6" mb={2}>
-                  Top Policy Concerns
-                </Typography>
-                <Box>
-                  {data?.top_concerns?.slice(0, 5).map((concern, index) => (
-                    <Box key={index} display="flex" justifyContent="space-between" alignItems="center" py={1}>
-                      <Typography variant="body2">
-                        {concern.topic}
-                      </Typography>
-                      <Chip
-                        label={`${concern.sentiment_score}%`}
-                        color={concern.sentiment_score < 0 ? 'error' : 'success'}
-                        size="small"
-                      />
-                    </Box>
-                  ))}
-                </Box>
-              </CardContent>
-            </Card>
-          </motion.div>
-        </Grid>
-
-        {/* Media Bias Overview */}
-        <Grid item xs={12} lg={6}>
-          <motion.div
-            initial={{ opacity: 0, x: 20 }}
-            animate={{ opacity: 1, x: 0 }}
-            transition={{ duration: 0.5, delay: 0.5 }}
-          >
-            <Card elevation={3}>
-              <CardContent>
-                <Typography variant="h6" mb={2}>
-                  Media Bias Overview
-                </Typography>
-                <Box>
-                  {data?.media_bias?.slice(0, 5).map((source, index) => (
-                    <Box key={index} display="flex" justifyContent="space-between" alignItems="center" py={1}>
-                      <Typography variant="body2">
-                        {source.name}
-                      </Typography>
-                      <Chip
-                        label={source.bias_level}
-                        color={source.bias_level === 'Critical' ? 'error' : source.bias_level === 'Supportive' ? 'success' : 'default'}
-                        size="small"
-                      />
-                    </Box>
-                  ))}
-                </Box>
-              </CardContent>
-            </Card>
-          </motion.div>
-        </Grid>
       </Grid>
-
-      {/* Quick Actions */}
-      <Paper sx={{ p: 2, mt: 3 }}>
-        <Typography variant="h6" mb={2}>
-          Quick Actions
-        </Typography>
-        <Box display="flex" gap={2} flexWrap="wrap">
-          <Chip
-            icon={<Notifications />}
-            label="View All Alerts"
-            clickable
-            color="primary"
-          />
-          <Chip
-            icon={<TrendingUp />}
-            label="Detailed Analytics"
-            clickable
-            color="secondary"
-          />
-          <Chip
-            icon={<Psychology />}
-            label="Policy Impact Report"
-            clickable
-            color="info"
-          />
-        </Box>
-      </Paper>
     </Box>
   );
 };

@@ -252,27 +252,7 @@ const TopTwitter = () => {
                     />
                   </Box>
 
-                  <Box>
-                    <Typography variant="body2" color="text.secondary" gutterBottom>
-                      Recent Tweets
-                    </Typography>
-                    {account.recent_tweets && account.recent_tweets.slice(0, 2).map((tweet, idx) => (
-                      <Typography 
-                        key={idx} 
-                        variant="body2" 
-                        sx={{ 
-                          fontSize: '0.8rem',
-                          mb: 0.5,
-                          display: '-webkit-box',
-                          WebkitLineClamp: 2,
-                          WebkitBoxOrient: 'vertical',
-                          overflow: 'hidden'
-                        }}
-                      >
-                        • {tweet.text}
-                      </Typography>
-                    ))}
-                  </Box>
+
                 </CardContent>
               </Card>
             </motion.div>
@@ -376,29 +356,7 @@ const TopTwitter = () => {
                   </Box>
                 </Grid>
                 
-                <Grid item xs={12}>
-                  <Typography variant="h6" gutterBottom>
-                    Recent Tweets
-                  </Typography>
-                  <List>
-                    {selectedSource.recent_tweets && selectedSource.recent_tweets.map((tweet, idx) => (
-                      <ListItem key={idx} divider>
-                        <ListItemIcon>
-                          <Chip
-                            label={tweet.sentiment}
-                            color={tweet.sentiment === 'positive' ? 'success' : 
-                                   tweet.sentiment === 'negative' ? 'error' : 'warning'}
-                            size="small"
-                          />
-                        </ListItemIcon>
-                        <ListItemText
-                          primary={tweet.text}
-                          secondary={`${tweet.engagement.toLocaleString()} engagement • ${tweet.time}`}
-                        />
-                      </ListItem>
-                    ))}
-                  </List>
-                </Grid>
+
               </Grid>
             </DialogContent>
             

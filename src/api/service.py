@@ -1326,3 +1326,220 @@ async def get_television_sources(db: Session = Depends(get_db)):
         logger.error(f"Error fetching television sources: {e}")
         return {"status": "error", "message": str(e)}
 
+@app.get("/policy-impact")
+async def get_policy_impact_data(db: Session = Depends(get_db)):
+    """Get policy impact analysis data based on sentiment analysis"""
+    try:
+        # Get the latest run timestamp
+        latest_run = get_latest_run_timestamp(db)
+        if not latest_run:
+            return {"status": "error", "message": "No data available"}
+        
+        # Define policy keywords to search for in the data
+        policy_keywords = [
+            'fuel subsidy', 'subsidy removal', 'petrol price', 'diesel price',
+            'exchange rate', 'currency policy', 'naira', 'forex',
+            'security measures', 'security policy', 'insecurity',
+            'economic reforms', 'economic policy', 'budget',
+            'tax policy', 'tax reform', 'taxation',
+            'education policy', 'school', 'university',
+            'health policy', 'healthcare', 'hospital',
+            'agriculture policy', 'farming', 'agricultural',
+            'infrastructure', 'road', 'bridge', 'construction',
+            'corruption', 'anti-corruption', 'transparency'
+        ]
+        
+        # Build the query to find policy-related mentions
+        policy_conditions = []
+        for keyword in policy_keywords:
+            policy_conditions.append(f"LOWER(text) LIKE '%{keyword}%'")
+            policy_conditions.append(f"LOWER(title) LIKE '%{keyword}%'")
+            policy_conditions.append(f"LOWER(content) LIKE '%{keyword}%'")
+        
+        policy_condition = " OR ".join(policy_conditions)
+        
+        # Query for policy-related data
+        query = text(f"""
+            SELECT 
+                date,
+                sentiment_score,
+                sentiment_label,
+                source,
+                platform,
+                text,
+                title,
+                COUNT(*) as mention_count
+            FROM sentiment_data 
+            WHERE run_timestamp = :run_timestamp 
+            AND ({policy_condition})
+            GROUP BY date, sentiment_score, sentiment_label, source, platform, text, title
+            ORDER BY date DESC
+        """)
+        
+        result = db.execute(query, {
+            "run_timestamp": latest_run
+        })
+        
+        # Process the data to identify policies and their impact
+        policies = []
+        policy_groups = {}
+        
+        for row in result:
+            # Extract policy name from text/title
+            policy_name = extract_policy_name(row.text or row.title or "")
+            if not policy_name:
+                continue
+                
+            if policy_name not in policy_groups:
+                policy_groups[policy_name] = {
+                    'mentions': [],
+                    'total_mentions': 0,
+                    'positive_mentions': 0,
+                    'negative_mentions': 0,
+                    'neutral_mentions': 0,
+                    'avg_sentiment': 0,
+                    'first_mention': None,
+                    'last_mention': None
+                }
+            
+            mention_data = {
+                'date': row.date.isoformat() if row.date else None,
+                'sentiment_score': float(row.sentiment_score) if row.sentiment_score else 0.0,
+                'sentiment_label': row.sentiment_label or 'neutral',
+                'source': row.source,
+                'platform': row.platform,
+                'text': row.text,
+                'mention_count': int(row.mention_count)
+            }
+            
+            policy_groups[policy_name]['mentions'].append(mention_data)
+            policy_groups[policy_name]['total_mentions'] += mention_data['mention_count']
+            
+            if mention_data['sentiment_label'] == 'positive':
+                policy_groups[policy_name]['positive_mentions'] += mention_data['mention_count']
+            elif mention_data['sentiment_label'] == 'negative':
+                policy_groups[policy_name]['negative_mentions'] += mention_data['mention_count']
+            else:
+                policy_groups[policy_name]['neutral_mentions'] += mention_data['mention_count']
+            
+            # Track first and last mention dates
+            if not policy_groups[policy_name]['first_mention'] or mention_data['date'] < policy_groups[policy_name]['first_mention']:
+                policy_groups[policy_name]['first_mention'] = mention_data['date']
+            if not policy_groups[policy_name]['last_mention'] or mention_data['date'] > policy_groups[policy_name]['last_mention']:
+                policy_groups[policy_name]['last_mention'] = mention_data['date']
+        
+        # Convert policy groups to the format expected by the frontend
+        for policy_name, data in policy_groups.items():
+            if data['total_mentions'] < 5:  # Only include policies with significant mentions
+                continue
+                
+            # Calculate average sentiment
+            total_sentiment = sum(m['sentiment_score'] * m['mention_count'] for m in data['mentions'])
+            data['avg_sentiment'] = total_sentiment / data['total_mentions'] if data['total_mentions'] > 0 else 0
+            
+            # Determine policy status
+            days_since_last_mention = 0
+            if data['last_mention']:
+                last_mention_date = datetime.fromisoformat(data['last_mention'].split('T')[0])
+                days_since_last_mention = (datetime.now() - last_mention_date).days
+            
+            if days_since_last_mention <= 7:
+                status = 'active'
+            elif days_since_last_mention <= 30:
+                status = 'recent'
+            else:
+                status = 'historical'
+            
+            # Calculate recovery rate (simplified)
+            recovery_rate = 0.0
+            if data['avg_sentiment'] > -0.3:
+                recovery_rate = 0.3
+            elif data['avg_sentiment'] > -0.6:
+                recovery_rate = 0.15
+            else:
+                recovery_rate = 0.05
+            
+            # Determine public reaction
+            if data['avg_sentiment'] > 0.3:
+                public_reaction = 'positive'
+            elif data['avg_sentiment'] < -0.6:
+                public_reaction = 'high_negative'
+            elif data['avg_sentiment'] < -0.3:
+                public_reaction = 'moderate_negative'
+            else:
+                public_reaction = 'mixed'
+            
+            policies.append({
+                'id': policy_name.lower().replace(' ', '_'),
+                'name': policy_name,
+                'announcement_date': data['first_mention'] or datetime.now().isoformat().split('T')[0],
+                'status': status,
+                'current_sentiment': data['avg_sentiment'],
+                'pre_announcement': data['avg_sentiment'] - 0.1,  # Estimate
+                'post_announcement': data['avg_sentiment'] - 0.2,  # Estimate
+                'peak_negative': min(data['avg_sentiment'] - 0.3, -0.5),  # Estimate
+                'recovery_rate': recovery_rate,
+                'media_coverage': data['total_mentions'],
+                'public_reaction': public_reaction,
+                'mentions': data['mentions'][:10]  # Limit to recent mentions
+            })
+        
+        # Sort policies by total mentions (most discussed first)
+        policies.sort(key=lambda x: x['media_coverage'], reverse=True)
+        
+        return {"status": "success", "data": policies}
+        
+    except Exception as e:
+        logger.error(f"Error fetching policy impact data: {e}")
+        return {"status": "error", "message": str(e)}
+
+
+def extract_policy_name(text):
+    """Extract policy name from text content"""
+    if not text:
+        return None
+    
+    text_lower = text.lower()
+    
+    # Define policy patterns
+    policy_patterns = [
+        ('fuel subsidy', 'Fuel Subsidy Removal'),
+        ('subsidy removal', 'Fuel Subsidy Removal'),
+        ('petrol price', 'Fuel Price Policy'),
+        ('diesel price', 'Fuel Price Policy'),
+        ('exchange rate', 'Exchange Rate Policy'),
+        ('currency policy', 'Exchange Rate Policy'),
+        ('forex', 'Exchange Rate Policy'),
+        ('security measures', 'Security Measures'),
+        ('security policy', 'Security Measures'),
+        ('insecurity', 'Security Measures'),
+        ('economic reforms', 'Economic Reforms'),
+        ('economic policy', 'Economic Reforms'),
+        ('budget', 'Budget Policy'),
+        ('tax policy', 'Tax Policy'),
+        ('tax reform', 'Tax Policy'),
+        ('taxation', 'Tax Policy'),
+        ('education policy', 'Education Policy'),
+        ('school', 'Education Policy'),
+        ('university', 'Education Policy'),
+        ('health policy', 'Healthcare Policy'),
+        ('healthcare', 'Healthcare Policy'),
+        ('hospital', 'Healthcare Policy'),
+        ('agriculture policy', 'Agriculture Policy'),
+        ('farming', 'Agriculture Policy'),
+        ('agricultural', 'Agriculture Policy'),
+        ('infrastructure', 'Infrastructure Policy'),
+        ('road', 'Infrastructure Policy'),
+        ('bridge', 'Infrastructure Policy'),
+        ('construction', 'Infrastructure Policy'),
+        ('corruption', 'Anti-Corruption Policy'),
+        ('anti-corruption', 'Anti-Corruption Policy'),
+        ('transparency', 'Anti-Corruption Policy')
+    ]
+    
+    for pattern, policy_name in policy_patterns:
+        if pattern in text_lower:
+            return policy_name
+    
+    return None
+

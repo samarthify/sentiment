@@ -291,7 +291,7 @@ const EventAnalysis = ({ data }) => {
   // Calculate event impacts
   const eventImpacts = keyEvents.map(event => {
     const change = event.afterSentiment - event.beforeSentiment;
-    const changeInfo = formatSentimentChange(change);
+
     return {
       name: event.title,
       before: event.beforeSentiment * 100,
@@ -301,35 +301,7 @@ const EventAnalysis = ({ data }) => {
     };
   });
 
-  const CustomTooltip = ({ active, payload, label }) => {
-    if (active && payload && payload.length) {
-      return (
-        <Box
-          sx={{
-            backgroundColor: 'background.paper',
-            p: 1.5,
-            border: 1,
-            borderColor: 'divider',
-            borderRadius: 1,
-          }}
-        >
-          <Typography variant="subtitle2" sx={{ mb: 1 }}>
-            {label}
-          </Typography>
-          {payload.map((entry) => (
-            <Typography
-              key={entry.name}
-              variant="body2"
-              sx={{ color: entry.color }}
-            >
-              {`${entry.name}: ${Number(entry.value).toFixed(1)}%`}
-            </Typography>
-          ))}
-        </Box>
-      );
-    }
-    return null;
-  };
+
 
   // Check if no events were found in the data
   const noEventsFound = keyEvents.length === 0 && crisisEvents.length === 0;

@@ -70,16 +70,16 @@ const PresidentialEmotionalSpectrum = ({ data, userRole = 'president' }) => {
   const [focusedEmotion, setFocusedEmotion] = useState(null);
   const [focusedPolicy, setFocusedPolicy] = useState(null);
 
-  // Nigeria Presidential Emotional Categories
+  // Leader's Emotional Categories
   const presidentialEmotionalCategories = {
-    // Positive Presidential Emotions
+    // Positive Leader's Emotions
     confidence: ['confident', 'assured', 'determined', 'resolute', 'strong', 'capable', 'competent', 'effective', 'successful', 'achievement', 'progress', 'development', 'growth', 'improvement', 'advancement', 'leadership', 'vision', 'hope', 'optimistic', 'promising'],
     
     trust: ['trust', 'believe', 'confidence', 'faith', 'reliable', 'honest', 'authentic', 'genuine', 'loyal', 'secure', 'safe', 'sure', 'protect', 'support', 'assure', 'commitment', 'dedicated', 'devoted', 'responsible', 'accountable', 'ethical', 'integrity', 'respect', 'honor', 'credible'],
     
     satisfaction: ['satisfied', 'pleased', 'content', 'happy', 'delighted', 'grateful', 'appreciative', 'thankful', 'blessed', 'fortunate', 'lucky', 'success', 'victory', 'win', 'triumph', 'accomplishment', 'fulfillment', 'completion', 'realization', 'achievement'],
     
-    // Negative Presidential Emotions
+    // Negative Leader's Emotions
     concern: ['concerned', 'worried', 'anxious', 'nervous', 'uneasy', 'troubled', 'distressed', 'bothered', 'perturbed', 'alarmed', 'apprehensive', 'fearful', 'scared', 'afraid', 'panicked', 'terrified', 'horrified', 'shocked', 'stunned', 'dismayed'],
     
     frustration: ['frustrated', 'annoyed', 'irritated', 'agitated', 'exasperated', 'impatient', 'disappointed', 'dissatisfied', 'displeased', 'unhappy', 'upset', 'angry', 'mad', 'furious', 'outraged', 'enraged', 'infuriated', 'livid', 'incensed', 'irate'],
@@ -107,7 +107,7 @@ const PresidentialEmotionalSpectrum = ({ data, userRole = 'president' }) => {
       
       mockData.push({
         id: i,
-        text: `Sample text with ${randomEmotion} emotion about Nigerian policies and presidential actions. This demonstrates the emotional spectrum analysis capabilities.`,
+        text: `Sample text with ${randomEmotion} emotion about policies and leadership actions. This demonstrates the emotional spectrum analysis capabilities.`,
         date: new Date(Date.now() - Math.random() * 30 * 24 * 60 * 60 * 1000).toISOString(),
         platform: randomPlatform,
         source: randomPlatform,
@@ -128,7 +128,7 @@ const PresidentialEmotionalSpectrum = ({ data, userRole = 'president' }) => {
     'Infrastructure Development': ['infrastructure', 'road', 'bridge', 'railway', 'airport', 'port', 'power', 'electricity', 'water', 'hospital', 'school', 'university', 'building', 'construction', 'development', 'project', 'facility']
   };
 
-  // Emotion colors for presidential context
+      // Emotion colors for leadership context
   const emotionColors = {
     confidence: theme.palette.success.main,
     trust: theme.palette.primary.main,
@@ -143,8 +143,8 @@ const PresidentialEmotionalSpectrum = ({ data, userRole = 'president' }) => {
     useEffect(() => {
     setLoading(true);
     
-    // Process data to extract presidential emotional spectrum
-    const analyzePresidentialEmotionalSpectrum = () => {
+      // Process data to extract leader's emotional spectrum
+  const analyzePresidentialEmotionalSpectrum = () => {
       // If no data is provided, use mock data
       const processedData = data || { rawData: generateMockEmotionalData() };
     const emotions = {};
@@ -187,7 +187,7 @@ const PresidentialEmotionalSpectrum = ({ data, userRole = 'president' }) => {
         const source = item.source || 'Unknown';
         const sentiment = parseFloat(item.sentiment_score) || 0;
         
-        // Detect presidential emotions in text
+        // Detect leader's emotions in text
         const documentEmotions = {};
         let totalEmotionScore = 0;
         
@@ -328,7 +328,7 @@ const PresidentialEmotionalSpectrum = ({ data, userRole = 'president' }) => {
       // Sort content by emotion score
       const sortedContent = contentWithHighEmotions
         .sort((a, b) => b.emotionScore - a.emotionScore)
-        .slice(0, 10); // Limit to top 10 emotional content for presidential view
+        .slice(0, 10); // Limit to top 10 emotional content for leader's view
       
       // Prepare policy emotion data
       const policyEmotionData = Object.entries(policyEmotions)
@@ -446,7 +446,7 @@ const PresidentialEmotionalSpectrum = ({ data, userRole = 'president' }) => {
       <Box sx={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', height: 400 }}>
         <CircularProgress size={60} />
         <Typography variant="h6" sx={{ mt: 2, color: 'text.secondary' }}>
-          Analyzing Presidential Emotional Spectrum...
+          Analyzing Leader's Emotional Spectrum...
         </Typography>
         <Typography variant="body2" sx={{ mt: 1, color: 'text.secondary' }}>
           Processing emotional responses to policies and decisions
@@ -482,8 +482,8 @@ const PresidentialEmotionalSpectrum = ({ data, userRole = 'president' }) => {
           <Box sx={{ display: 'flex', alignItems: 'center' }}>
             <PsychologyIcon sx={{ mr: 1, color: theme.palette.secondary.main }} />
             <Typography variant="h6">
-              Presidential Emotional Spectrum
-              <Tooltip title="Analysis of emotional responses to presidential policies and decisions">
+              Leader's Emotional Spectrum
+                              <Tooltip title="Analysis of emotional responses to leadership policies and decisions">
                 <IconButton size="small" sx={{ ml: 1 }}>
                   <InfoIcon fontSize="small" />
                 </IconButton>
@@ -550,7 +550,7 @@ const PresidentialEmotionalSpectrum = ({ data, userRole = 'president' }) => {
           {/* Presidential Emotion Distribution */}
           <Grid item xs={12} md={6}>
             <Typography variant="subtitle1" gutterBottom>
-              Presidential Emotion Distribution
+              Leader's Emotion Distribution
             </Typography>
             <Box sx={{ height: 350 }}>
               <ResponsiveContainer width="100%" height="100%">
@@ -584,7 +584,7 @@ const PresidentialEmotionalSpectrum = ({ data, userRole = 'president' }) => {
           {/* Presidential Emotion Intensity */}
           <Grid item xs={12} md={6}>
             <Typography variant="subtitle1" gutterBottom>
-              Presidential Emotion Intensity
+              Leader's Emotion Intensity
             </Typography>
             <Box sx={{ height: 350 }}>
               <ResponsiveContainer width="100%" height="100%">
@@ -636,7 +636,7 @@ const PresidentialEmotionalSpectrum = ({ data, userRole = 'president' }) => {
           <Grid item xs={12}>
             <Typography variant="subtitle1" gutterBottom sx={{ display: 'flex', alignItems: 'center' }}>
               <TimelineIcon sx={{ mr: 1 }} />
-              Presidential Emotion Timeline
+              Leader's Emotion Timeline
               {focusedEmotion && (
                 <Chip 
                   label={focusedEmotion} 
@@ -693,7 +693,7 @@ const PresidentialEmotionalSpectrum = ({ data, userRole = 'president' }) => {
           <Grid item xs={12} md={6}>
             <Typography variant="subtitle1" gutterBottom sx={{ display: 'flex', alignItems: 'center' }}>
               <TextFieldsIcon sx={{ mr: 1 }} />
-              {focusedEmotion ? `Top ${focusedEmotion} Content` : 'Top Presidential Emotional Content'}
+              {focusedEmotion ? `Top ${focusedEmotion} Content` : 'Top Leader\'s Emotional Content'}
             </Typography>
             <Box sx={{ height: 300, overflowY: 'auto' }}>
               {filteredContent.map((item, index) => (
@@ -746,7 +746,7 @@ const PresidentialEmotionalSpectrum = ({ data, userRole = 'president' }) => {
           {/* Presidential Emotion By Platform */}
           <Grid item xs={12} md={6}>
             <Typography variant="subtitle1" gutterBottom>
-              Presidential Emotion By Platform
+              Leader's Emotion By Platform
             </Typography>
             <Box sx={{ height: 300 }}>
               <ResponsiveContainer width="100%" height="100%">

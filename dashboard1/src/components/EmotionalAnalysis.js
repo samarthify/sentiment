@@ -11,11 +11,6 @@ import {
   IconButton,
 } from '@mui/material';
 import {
-  Mood as JoyIcon,
-  MoodBad as AngerIcon,
-  RemoveCircle as FearIcon,
-  SentimentDissatisfied as SadnessIcon,
-  Favorite as TrustIcon,
   Event as EventIcon,
   Info as InfoIcon,
 } from '@mui/icons-material';

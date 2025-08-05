@@ -53,6 +53,7 @@ const SentimentDataTable = ({ data: rawData, initialSentimentFilter = null, init
   const [dateFilter, setDateFilter] = useState(initialDateFilter);
   const [countryFilter, setCountryFilter] = useState(initialCountryFilter);
   const [textFilter, setTextFilter] = useState(initialTextFilter);
+  const [filterDialogOpen, setFilterDialogOpen] = useState(false);
 
   const formatDate = (dateString) => {
     if (!dateString) return t('general.unknown');
@@ -230,6 +231,18 @@ const SentimentDataTable = ({ data: rawData, initialSentimentFilter = null, init
     setTextFilter(null);
   };
 
+  const handleFilterButtonClick = () => {
+    setFilterDialogOpen(true);
+  };
+
+  const handleFilterDialogClose = () => {
+    setFilterDialogOpen(false);
+  };
+
+  const handleApplyFilters = () => {
+    setFilterDialogOpen(false);
+  };
+
   if (!processedData.length) {
     return (
       <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '400px' }}>
@@ -239,111 +252,256 @@ const SentimentDataTable = ({ data: rawData, initialSentimentFilter = null, init
   }
 
   return (
-    <Box sx={{ width: '100%' }}>
-      <Box sx={{ mb: 2, display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 1 }}>
-        <Typography variant="h6" component="div" sx={{ fontWeight: 500 }}>
-          {t('sentimentTable.title')} {filteredData.length > 0 && `(${filteredData.length} ${t('sentimentTable.records')})`}
-        </Typography>
-        
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
-          {(sentimentFilter || sourceFilter || dateFilter || countryFilter || textFilter) && (
-            <Chip 
-              label={t('sentimentTable.clearAllFilters')}
-              color="default"
-              onDelete={clearFilters}
-              size="small"
-              sx={{ fontWeight: 500 }}
-            />
-          )}
-          
-          {sentimentFilter && (
-            <Chip 
-              label={`${t(`sentiments.${sentimentFilter}`)}`}
-              color={sentimentFilter === 'positive' ? 'success' : sentimentFilter === 'negative' ? 'error' : 'primary'}
-              onDelete={clearSentimentFilter}
-              size="small"
-              sx={{ fontWeight: 500 }}
-            />
-          )}
-          
-          {sourceFilter && (
-            <Chip 
-              label={`${t('sentimentTable.source')}: ${sourceFilter}`}
-              color="info"
-              onDelete={clearSourceFilter}
-              size="small"
-              sx={{ fontWeight: 500 }}
-            />
-          )}
-          
-          {dateFilter && (
-            <Chip 
-              label={typeof dateFilter === 'string' 
-                ? `${t('sentimentTable.date')}: ${dateFilter}` 
-                : `${t('sentimentTable.dateRange')}: ${dateFilter.start} - ${dateFilter.end}`}
-              color="warning"
-              onDelete={clearDateFilter}
-              size="small"
-              sx={{ fontWeight: 500 }}
-            />
-          )}
-          
-          {countryFilter && (
-            <Chip 
-              label={`${t('sentimentTable.country')}: ${countryFilter}`}
-              color="success"
-              onDelete={clearCountryFilter}
-              size="small"
-              sx={{ fontWeight: 500 }}
-            />
-          )}
-          
-          {textFilter && (
-            <Chip 
-              label={`${t('sentimentTable.contains')}: ${textFilter}`}
-              color="default"
-              onDelete={clearTextFilter}
-              size="small"
-              sx={{ fontWeight: 500 }}
-            />
-          )}
-          
-          <TextField
-            size="small"
-            placeholder={t('sentimentTable.search')}
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            InputProps={{
-              startAdornment: (
-                <InputAdornment position="start">
-                  <SearchIcon fontSize="small" />
-                </InputAdornment>
-              ),
-              endAdornment: (
-                <InputAdornment position="end">
-                  <IconButton size="small">
-                    <FilterListIcon fontSize="small" />
-                  </IconButton>
-                </InputAdornment>
-              ),
+    <Box sx={{ 
+      width: '100%', 
+      height: '100%',
+      display: 'flex',
+      flexDirection: 'column',
+      px: 0
+    }}>
+      <Box sx={{ 
+        py: 3, 
+        pb: 2,
+        px: 0,
+        background: 'linear-gradient(135deg, rgba(255,255,255,0.1) 0%, rgba(255,255,255,0.05) 100%)',
+        backdropFilter: 'blur(10px)',
+        borderBottom: '1px solid rgba(255,255,255,0.2)'
+      }}>
+        <Box sx={{ 
+          display: 'flex', 
+          justifyContent: 'space-between', 
+          alignItems: 'center', 
+          flexWrap: 'wrap', 
+          gap: 2 
+        }}>
+          <Typography 
+            variant="h6" 
+            component="div" 
+            sx={{ 
+              fontWeight: 600,
+              background: 'linear-gradient(135deg, #6366f1 0%, #a855f7 100%)',
+              backgroundClip: 'text',
+              WebkitBackgroundClip: 'text',
+              WebkitTextFillColor: 'transparent'
             }}
-            sx={{ width: '300px' }}
-          />
+          >
+            {t('sentimentTable.title')} {filteredData.length > 0 && `(${filteredData.length} ${t('sentimentTable.records')})`}
+          </Typography>
+          
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
+            {(sentimentFilter || sourceFilter || dateFilter || countryFilter || textFilter) && (
+              <Chip 
+                label={t('sentimentTable.clearAllFilters')}
+                color="default"
+                onDelete={clearFilters}
+                size="small"
+                sx={{ 
+                  fontWeight: 500,
+                  background: 'linear-gradient(135deg, rgba(99, 102, 241, 0.1) 0%, rgba(168, 85, 247, 0.1) 100%)',
+                  backdropFilter: 'blur(10px)',
+                  border: '1px solid rgba(99, 102, 241, 0.2)'
+                }}
+              />
+            )}
+            
+            {sentimentFilter && (
+              <Chip 
+                label={`${t(`sentiments.${sentimentFilter}`)}`}
+                color={sentimentFilter === 'positive' ? 'success' : sentimentFilter === 'negative' ? 'error' : 'primary'}
+                onDelete={clearSentimentFilter}
+                size="small"
+                sx={{ 
+                  fontWeight: 500,
+                  background: 'linear-gradient(135deg, rgba(99, 102, 241, 0.1) 0%, rgba(168, 85, 247, 0.1) 100%)',
+                  backdropFilter: 'blur(10px)',
+                  border: '1px solid rgba(99, 102, 241, 0.2)'
+                }}
+              />
+            )}
+            
+            {sourceFilter && (
+              <Chip 
+                label={`${t('sentimentTable.source')}: ${sourceFilter}`}
+                color="info"
+                onDelete={clearSourceFilter}
+                size="small"
+                sx={{ 
+                  fontWeight: 500,
+                  background: 'linear-gradient(135deg, rgba(99, 102, 241, 0.1) 0%, rgba(168, 85, 247, 0.1) 100%)',
+                  backdropFilter: 'blur(10px)',
+                  border: '1px solid rgba(99, 102, 241, 0.2)'
+                }}
+              />
+            )}
+            
+            {dateFilter && (
+              <Chip 
+                label={typeof dateFilter === 'string' 
+                  ? `${t('sentimentTable.date')}: ${dateFilter}` 
+                  : `${t('sentimentTable.dateRange')}: ${dateFilter.start} - ${dateFilter.end}`}
+                color="warning"
+                onDelete={clearDateFilter}
+                size="small"
+                sx={{ 
+                  fontWeight: 500,
+                  background: 'linear-gradient(135deg, rgba(99, 102, 241, 0.1) 0%, rgba(168, 85, 247, 0.1) 100%)',
+                  backdropFilter: 'blur(10px)',
+                  border: '1px solid rgba(99, 102, 241, 0.2)'
+                }}
+              />
+            )}
+            
+            {countryFilter && (
+              <Chip 
+                label={`${t('sentimentTable.country')}: ${countryFilter}`}
+                color="success"
+                onDelete={clearCountryFilter}
+                size="small"
+                sx={{ 
+                  fontWeight: 500,
+                  background: 'linear-gradient(135deg, rgba(99, 102, 241, 0.1) 0%, rgba(168, 85, 247, 0.1) 100%)',
+                  backdropFilter: 'blur(10px)',
+                  border: '1px solid rgba(99, 102, 241, 0.2)'
+                }}
+              />
+            )}
+            
+            {textFilter && (
+              <Chip 
+                label={`${t('sentimentTable.contains')}: ${textFilter}`}
+                color="default"
+                onDelete={clearTextFilter}
+                size="small"
+                sx={{ 
+                  fontWeight: 500,
+                  background: 'linear-gradient(135deg, rgba(99, 102, 241, 0.1) 0%, rgba(168, 85, 247, 0.1) 100%)',
+                  backdropFilter: 'blur(10px)',
+                  border: '1px solid rgba(99, 102, 241, 0.2)'
+                }}
+              />
+            )}
+            
+            <TextField
+              size="small"
+              placeholder={t('sentimentTable.search')}
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              InputProps={{
+                startAdornment: (
+                  <InputAdornment position="start">
+                    <SearchIcon fontSize="small" />
+                  </InputAdornment>
+                ),
+                endAdornment: (
+                  <InputAdornment position="end">
+                    <IconButton 
+                      size="small"
+                      onClick={handleFilterButtonClick}
+                      sx={{ 
+                        color: (sentimentFilter || sourceFilter || dateFilter || countryFilter || textFilter) 
+                          ? 'primary.main' 
+                          : 'text.secondary'
+                      }}
+                    >
+                      <FilterListIcon fontSize="small" />
+                    </IconButton>
+                  </InputAdornment>
+                ),
+              }}
+              sx={{ 
+                width: '300px',
+                '& .MuiOutlinedInput-root': {
+                  background: 'linear-gradient(135deg, rgba(255,255,255,0.9) 0%, rgba(255,255,255,0.7) 100%)',
+                  backdropFilter: 'blur(10px)',
+                  border: '1px solid rgba(255,255,255,0.3)',
+                  borderRadius: '12px',
+                  '&:hover': {
+                    border: '1px solid rgba(99, 102, 241, 0.3)',
+                  },
+                  '&.Mui-focused': {
+                    border: '1px solid rgba(99, 102, 241, 0.5)',
+                    boxShadow: '0 0 0 2px rgba(99, 102, 241, 0.1)',
+                  }
+                }
+              }}
+            />
+          </Box>
         </Box>
       </Box>
-      <Paper sx={{ width: '100%', overflow: 'hidden', boxShadow: '0 4px 12px rgba(0,0,0,0.05)' }}>
-        <TableContainer sx={{ maxHeight: 'calc(100vh - 250px)' }}>
+      
+      <Box sx={{ 
+        flex: 1, 
+        overflow: 'hidden',
+        display: 'flex',
+        flexDirection: 'column',
+        px: 0
+      }}>
+        <TableContainer sx={{ 
+          flex: 1,
+          maxHeight: 'none',
+          background: 'linear-gradient(135deg, rgba(255,255,255,0.8) 0%, rgba(255,255,255,0.6) 100%)',
+          backdropFilter: 'blur(10px)'
+        }}>
           <Table stickyHeader aria-label="sentiment data table">
             <TableHead>
               <TableRow>
-                <TableCell sx={{ fontWeight: 'bold', backgroundColor: '#f5f5f5' }}>{t('sentimentTable.date')}</TableCell>
-                <TableCell sx={{ fontWeight: 'bold', backgroundColor: '#f5f5f5' }}>{t('sentimentTable.source')}</TableCell>
-                <TableCell sx={{ fontWeight: 'bold', backgroundColor: '#f5f5f5' }}>{t('sentimentTable.platform')}</TableCell>
-                <TableCell sx={{ fontWeight: 'bold', backgroundColor: '#f5f5f5' }}>{t('sentimentTable.sentiment')}</TableCell>
-                <TableCell sx={{ fontWeight: 'bold', backgroundColor: '#f5f5f5' }}>{t('sentimentTable.content')}</TableCell>
-                <TableCell sx={{ fontWeight: 'bold', backgroundColor: '#f5f5f5' }}>{t('sentimentTable.author')}</TableCell>
-                <TableCell sx={{ fontWeight: 'bold', backgroundColor: '#f5f5f5' }}>{t('sentimentTable.location')}</TableCell>
-                <TableCell sx={{ fontWeight: 'bold', backgroundColor: '#f5f5f5', textAlign: 'center' }}>{t('sentimentTable.aiEnhanced')}</TableCell>
+                <TableCell sx={{ 
+                  fontWeight: 'bold', 
+                  background: 'linear-gradient(135deg, rgba(99, 102, 241, 0.1) 0%, rgba(168, 85, 247, 0.1) 100%)',
+                  backdropFilter: 'blur(10px)',
+                  borderBottom: '1px solid rgba(99, 102, 241, 0.2)',
+                  color: '#6366f1'
+                }}>{t('sentimentTable.date')}</TableCell>
+                <TableCell sx={{ 
+                  fontWeight: 'bold', 
+                  background: 'linear-gradient(135deg, rgba(99, 102, 241, 0.1) 0%, rgba(168, 85, 247, 0.1) 100%)',
+                  backdropFilter: 'blur(10px)',
+                  borderBottom: '1px solid rgba(99, 102, 241, 0.2)',
+                  color: '#6366f1'
+                }}>{t('sentimentTable.source')}</TableCell>
+                <TableCell sx={{ 
+                  fontWeight: 'bold', 
+                  background: 'linear-gradient(135deg, rgba(99, 102, 241, 0.1) 0%, rgba(168, 85, 247, 0.1) 100%)',
+                  backdropFilter: 'blur(10px)',
+                  borderBottom: '1px solid rgba(99, 102, 241, 0.2)',
+                  color: '#6366f1'
+                }}>{t('sentimentTable.platform')}</TableCell>
+                <TableCell sx={{ 
+                  fontWeight: 'bold', 
+                  background: 'linear-gradient(135deg, rgba(99, 102, 241, 0.1) 0%, rgba(168, 85, 247, 0.1) 100%)',
+                  backdropFilter: 'blur(10px)',
+                  borderBottom: '1px solid rgba(99, 102, 241, 0.2)',
+                  color: '#6366f1'
+                }}>{t('sentimentTable.sentiment')}</TableCell>
+                <TableCell sx={{ 
+                  fontWeight: 'bold', 
+                  background: 'linear-gradient(135deg, rgba(99, 102, 241, 0.1) 0%, rgba(168, 85, 247, 0.1) 100%)',
+                  backdropFilter: 'blur(10px)',
+                  borderBottom: '1px solid rgba(99, 102, 241, 0.2)',
+                  color: '#6366f1'
+                }}>{t('sentimentTable.content')}</TableCell>
+                <TableCell sx={{ 
+                  fontWeight: 'bold', 
+                  background: 'linear-gradient(135deg, rgba(99, 102, 241, 0.1) 0%, rgba(168, 85, 247, 0.1) 100%)',
+                  backdropFilter: 'blur(10px)',
+                  borderBottom: '1px solid rgba(99, 102, 241, 0.2)',
+                  color: '#6366f1'
+                }}>{t('sentimentTable.author')}</TableCell>
+                <TableCell sx={{ 
+                  fontWeight: 'bold', 
+                  background: 'linear-gradient(135deg, rgba(99, 102, 241, 0.1) 0%, rgba(168, 85, 247, 0.1) 100%)',
+                  backdropFilter: 'blur(10px)',
+                  borderBottom: '1px solid rgba(99, 102, 241, 0.2)',
+                  color: '#6366f1'
+                }}>{t('sentimentTable.location')}</TableCell>
+                <TableCell sx={{ 
+                  fontWeight: 'bold', 
+                  background: 'linear-gradient(135deg, rgba(99, 102, 241, 0.1) 0%, rgba(168, 85, 247, 0.1) 100%)',
+                  backdropFilter: 'blur(10px)',
+                  borderBottom: '1px solid rgba(99, 102, 241, 0.2)',
+                  color: '#6366f1',
+                  textAlign: 'center' 
+                }}>{t('sentimentTable.aiEnhanced')}</TableCell>
               </TableRow>
             </TableHead>
             <TableBody>
@@ -357,23 +515,53 @@ const SentimentDataTable = ({ data: rawData, initialSentimentFilter = null, init
                         hover 
                         key={index} 
                         onClick={() => handleRowClick(row)}
-                        sx={{ cursor: 'pointer' }}
+                        sx={{ 
+                          cursor: 'pointer',
+                          background: index % 2 === 0 
+                            ? 'linear-gradient(135deg, rgba(255,255,255,0.3) 0%, rgba(255,255,255,0.1) 100%)'
+                            : 'linear-gradient(135deg, rgba(99, 102, 241, 0.05) 0%, rgba(168, 85, 247, 0.05) 100%)',
+                          backdropFilter: 'blur(5px)',
+                          '&:hover': {
+                            background: 'linear-gradient(135deg, rgba(99, 102, 241, 0.1) 0%, rgba(168, 85, 247, 0.1) 100%)',
+                            backdropFilter: 'blur(10px)',
+                            transform: 'translateY(-1px)',
+                            boxShadow: '0 4px 12px rgba(99, 102, 241, 0.2)',
+                            transition: 'all 0.2s ease-in-out'
+                          }
+                        }}
                       >
-                        <TableCell>{row.date}</TableCell>
-                        <TableCell>{row.source}</TableCell>
-                        <TableCell>{row.platform}</TableCell>
-                        <TableCell>
+                        <TableCell sx={{ 
+                          borderBottom: '1px solid rgba(255,255,255,0.2)',
+                          fontWeight: 500
+                        }}>{row.date}</TableCell>
+                        <TableCell sx={{ 
+                          borderBottom: '1px solid rgba(255,255,255,0.2)',
+                          fontWeight: 500
+                        }}>{row.source}</TableCell>
+                        <TableCell sx={{ 
+                          borderBottom: '1px solid rgba(255,255,255,0.2)',
+                          fontWeight: 500
+                        }}>{row.platform}</TableCell>
+                        <TableCell sx={{ 
+                          borderBottom: '1px solid rgba(255,255,255,0.2)'
+                        }}>
                           <Chip 
                             label={row.sentiment} 
                             size="small"
                             sx={{ 
                               backgroundColor: sentimentStyle.bg, 
                               color: sentimentStyle.color,
-                              fontWeight: 500
+                              fontWeight: 600,
+                              background: 'linear-gradient(135deg, rgba(255,255,255,0.9) 0%, rgba(255,255,255,0.7) 100%)',
+                              backdropFilter: 'blur(10px)',
+                              border: '1px solid rgba(255,255,255,0.3)',
+                              boxShadow: '0 2px 8px rgba(0,0,0,0.1)'
                             }} 
                           />
                         </TableCell>
-                        <TableCell>
+                        <TableCell sx={{ 
+                          borderBottom: '1px solid rgba(255,255,255,0.2)'
+                        }}>
                           <Typography
                             variant="body2"
                             sx={{
@@ -382,20 +570,41 @@ const SentimentDataTable = ({ data: rawData, initialSentimentFilter = null, init
                               display: '-webkit-box',
                               WebkitLineClamp: 2,
                               WebkitBoxOrient: 'vertical',
-                              maxWidth: '400px'
+                              maxWidth: '400px',
+                              fontWeight: 500
                             }}
                           >
                             {row.content}
                           </Typography>
                         </TableCell>
-                        <TableCell>{row.author}</TableCell>
-                        <TableCell>{row.location || t('sentimentTable.unknownLocation')}</TableCell>
-                        <TableCell sx={{ textAlign: 'center' }}>
+                        <TableCell sx={{ 
+                          borderBottom: '1px solid rgba(255,255,255,0.2)',
+                          fontWeight: 500
+                        }}>{row.author}</TableCell>
+                        <TableCell sx={{ 
+                          borderBottom: '1px solid rgba(255,255,255,0.2)',
+                          fontWeight: 500
+                        }}>{row.location || t('sentimentTable.unknownLocation')}</TableCell>
+                        <TableCell sx={{ 
+                          textAlign: 'center',
+                          borderBottom: '1px solid rgba(255,255,255,0.2)'
+                        }}>
                           {row.sentiment_label && row.sentiment_score !== undefined && (
                             <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 0.5 }}>
-                              <CheckCircleOutlineIcon fontSize="small" sx={{ color: 'success.main' }} titleAccess={`AI Enhanced: ${row.sentiment_label} (${row.sentiment_score?.toFixed(2)})`} />
+                              <CheckCircleOutlineIcon 
+                                fontSize="small" 
+                                sx={{ 
+                                  color: 'success.main',
+                                  filter: 'drop-shadow(0 2px 4px rgba(0,0,0,0.2))'
+                                }} 
+                                titleAccess={`AI Enhanced: ${row.sentiment_label} (${row.sentiment_score?.toFixed(2)})`} 
+                              />
                               {row.sentiment_justification && (
-                                <Typography variant="caption" sx={{ fontSize: '0.6rem', color: 'primary.main' }}>
+                                <Typography variant="caption" sx={{ 
+                                  fontSize: '0.6rem', 
+                                  color: 'primary.main',
+                                  fontWeight: 600
+                                }}>
                                   AI Justification
                                 </Typography>
                               )}
@@ -407,25 +616,61 @@ const SentimentDataTable = ({ data: rawData, initialSentimentFilter = null, init
                   })
               ) : (
                 <TableRow>
-                  <TableCell colSpan={6} align="center" sx={{ py: 3 }}>
-                    {t('sentimentTable.noDataFound')}
+                  <TableCell colSpan={8} align="center" sx={{ 
+                    py: 6,
+                    background: 'linear-gradient(135deg, rgba(255,255,255,0.5) 0%, rgba(255,255,255,0.3) 100%)',
+                    backdropFilter: 'blur(10px)',
+                    borderRadius: '12px',
+                    border: '1px solid rgba(255,255,255,0.3)'
+                  }}>
+                    <Typography variant="h6" sx={{ 
+                      color: 'rgba(0,0,0,0.6)',
+                      fontWeight: 600
+                    }}>
+                      {t('sentimentTable.noDataFound')}
+                    </Typography>
                   </TableCell>
                 </TableRow>
               )}
             </TableBody>
           </Table>
         </TableContainer>
-        <TablePagination
-          rowsPerPageOptions={[10, 25, 50, 100]}
-          component="div"
-          count={filteredData.length}
-          rowsPerPage={rowsPerPage}
-          page={page}
-          onPageChange={handleChangePage}
-          onRowsPerPageChange={handleChangeRowsPerPage}
-          labelRowsPerPage={t('sentimentTable.rowsPerPage')}
-        />
-      </Paper>
+        <Box sx={{ 
+          py: 2,
+          px: 0,
+          background: 'linear-gradient(135deg, rgba(255,255,255,0.1) 0%, rgba(255,255,255,0.05) 100%)',
+          backdropFilter: 'blur(10px)',
+          borderTop: '1px solid rgba(255,255,255,0.2)'
+        }}>
+          <TablePagination
+            rowsPerPageOptions={[10, 25, 50, 100]}
+            component="div"
+            count={filteredData.length}
+            rowsPerPage={rowsPerPage}
+            page={page}
+            onPageChange={handleChangePage}
+            onRowsPerPageChange={handleChangeRowsPerPage}
+            labelRowsPerPage={t('sentimentTable.rowsPerPage')}
+            sx={{
+              '& .MuiTablePagination-select': {
+                background: 'linear-gradient(135deg, rgba(255,255,255,0.9) 0%, rgba(255,255,255,0.7) 100%)',
+                backdropFilter: 'blur(10px)',
+                border: '1px solid rgba(255,255,255,0.3)',
+                borderRadius: '8px'
+              },
+              '& .MuiTablePagination-actions button': {
+                background: 'linear-gradient(135deg, rgba(99, 102, 241, 0.1) 0%, rgba(168, 85, 247, 0.1) 100%)',
+                backdropFilter: 'blur(10px)',
+                border: '1px solid rgba(99, 102, 241, 0.2)',
+                borderRadius: '8px',
+                '&:hover': {
+                  background: 'linear-gradient(135deg, rgba(99, 102, 241, 0.2) 0%, rgba(168, 85, 247, 0.2) 100%)',
+                }
+              }
+            }}
+          />
+        </Box>
+      </Box>
 
       {/* Detail Dialog */}
       <Dialog 
@@ -619,6 +864,325 @@ const SentimentDataTable = ({ data: rawData, initialSentimentFilter = null, init
             </DialogActions>
           </>
         )}
+      </Dialog>
+
+      {/* Filter Dialog */}
+      <Dialog
+        open={filterDialogOpen}
+        onClose={handleFilterDialogClose}
+        maxWidth="sm"
+        fullWidth
+      >
+        <DialogTitle sx={{ 
+          display: 'flex', 
+          justifyContent: 'space-between', 
+          alignItems: 'center',
+          background: 'linear-gradient(135deg, rgba(99, 102, 241, 0.1) 0%, rgba(168, 85, 247, 0.1) 100%)',
+          backdropFilter: 'blur(10px)',
+          borderBottom: '1px solid rgba(99, 102, 241, 0.2)'
+        }}>
+          <Typography variant="h6" sx={{ 
+            background: 'linear-gradient(135deg, #6366f1 0%, #a855f7 100%)',
+            backgroundClip: 'text',
+            WebkitBackgroundClip: 'text',
+            WebkitTextFillColor: 'transparent',
+            fontWeight: 600
+          }}>
+            Advanced Filters
+          </Typography>
+          <IconButton onClick={handleFilterDialogClose} size="small">
+            <CloseIcon />
+          </IconButton>
+        </DialogTitle>
+        <DialogContent sx={{ py: 3 }}>
+          <Grid container spacing={3}>
+            {/* Sentiment Filter */}
+            <Grid item xs={12}>
+              <Typography variant="subtitle1" gutterBottom sx={{ fontWeight: 600 }}>
+                Sentiment
+              </Typography>
+              <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
+                {['positive', 'negative', 'neutral'].map((sentiment) => (
+                  <Chip
+                    key={sentiment}
+                    label={t(`sentiments.${sentiment}`)}
+                    onClick={() => setSentimentFilter(sentimentFilter === sentiment ? null : sentiment)}
+                    color={sentimentFilter === sentiment ? 'primary' : 'default'}
+                    variant={sentimentFilter === sentiment ? 'filled' : 'outlined'}
+                    sx={{ 
+                      background: sentimentFilter === sentiment 
+                        ? 'linear-gradient(135deg, rgba(99, 102, 241, 0.2) 0%, rgba(168, 85, 247, 0.2) 100%)'
+                        : 'linear-gradient(135deg, rgba(255,255,255,0.9) 0%, rgba(255,255,255,0.7) 100%)',
+                      backdropFilter: 'blur(10px)',
+                      border: '1px solid rgba(99, 102, 241, 0.2)',
+                      '&:hover': {
+                        background: 'linear-gradient(135deg, rgba(99, 102, 241, 0.15) 0%, rgba(168, 85, 247, 0.15) 100%)',
+                      }
+                    }}
+                  />
+                ))}
+              </Box>
+            </Grid>
+
+            {/* Source Filter */}
+            <Grid item xs={12}>
+              <Typography variant="subtitle1" gutterBottom sx={{ fontWeight: 600 }}>
+                Source/Platform
+              </Typography>
+              <TextField
+                fullWidth
+                size="small"
+                placeholder="Enter source or platform name"
+                value={sourceFilter || ''}
+                onChange={(e) => setSourceFilter(e.target.value || null)}
+                sx={{
+                  '& .MuiOutlinedInput-root': {
+                    background: 'linear-gradient(135deg, rgba(255,255,255,0.9) 0%, rgba(255,255,255,0.7) 100%)',
+                    backdropFilter: 'blur(10px)',
+                    border: '1px solid rgba(255,255,255,0.3)',
+                    borderRadius: '8px',
+                    '&:hover': {
+                      border: '1px solid rgba(99, 102, 241, 0.3)',
+                    },
+                    '&.Mui-focused': {
+                      border: '1px solid rgba(99, 102, 241, 0.5)',
+                      boxShadow: '0 0 0 2px rgba(99, 102, 241, 0.1)',
+                    }
+                  }
+                }}
+              />
+            </Grid>
+
+            {/* Date Filter */}
+            <Grid item xs={12}>
+              <Typography variant="subtitle1" gutterBottom sx={{ fontWeight: 600 }}>
+                Date Range
+              </Typography>
+              <Grid container spacing={2}>
+                <Grid item xs={6}>
+                  <TextField
+                    fullWidth
+                    size="small"
+                    type="date"
+                    label="Start Date"
+                    value={dateFilter?.start || ''}
+                    onChange={(e) => setDateFilter({
+                      ...dateFilter,
+                      start: e.target.value || null
+                    })}
+                    InputProps={{
+                      inputProps: {
+                        placeholder: ''
+                      }
+                    }}
+                    sx={{
+                      '& .MuiOutlinedInput-root': {
+                        background: 'linear-gradient(135deg, rgba(255,255,255,0.9) 0%, rgba(255,255,255,0.7) 100%)',
+                        backdropFilter: 'blur(10px)',
+                        border: '1px solid rgba(255,255,255,0.3)',
+                        borderRadius: '8px',
+                        '&:hover': {
+                          border: '1px solid rgba(99, 102, 241, 0.3)',
+                        },
+                        '&.Mui-focused': {
+                          border: '1px solid rgba(99, 102, 241, 0.5)',
+                          boxShadow: '0 0 0 2px rgba(99, 102, 241, 0.1)',
+                        }
+                      },
+                      '& input[type="date"]::-webkit-datetime-edit-fields-wrapper': {
+                        color: 'transparent'
+                      },
+                      '& input[type="date"]::-webkit-datetime-edit-text': {
+                        color: 'transparent'
+                      },
+                      '& input[type="date"]::-webkit-datetime-edit-month-field': {
+                        color: 'transparent'
+                      },
+                      '& input[type="date"]::-webkit-datetime-edit-day-field': {
+                        color: 'transparent'
+                      },
+                      '& input[type="date"]::-webkit-datetime-edit-year-field': {
+                        color: 'transparent'
+                      },
+                      '& input[type="date"]:focus::-webkit-datetime-edit-fields-wrapper': {
+                        color: 'inherit'
+                      },
+                      '& input[type="date"]:focus::-webkit-datetime-edit-text': {
+                        color: 'inherit'
+                      },
+                      '& input[type="date"]:focus::-webkit-datetime-edit-month-field': {
+                        color: 'inherit'
+                      },
+                      '& input[type="date"]:focus::-webkit-datetime-edit-day-field': {
+                        color: 'inherit'
+                      },
+                      '& input[type="date"]:focus::-webkit-datetime-edit-year-field': {
+                        color: 'inherit'
+                      }
+                    }}
+                  />
+                </Grid>
+                <Grid item xs={6}>
+                  <TextField
+                    fullWidth
+                    size="small"
+                    type="date"
+                    label="End Date"
+                    value={dateFilter?.end || ''}
+                    onChange={(e) => setDateFilter({
+                      ...dateFilter,
+                      end: e.target.value || null
+                    })}
+                    InputProps={{
+                      inputProps: {
+                        placeholder: ''
+                      }
+                    }}
+                    sx={{
+                      '& .MuiOutlinedInput-root': {
+                        background: 'linear-gradient(135deg, rgba(255,255,255,0.9) 0%, rgba(255,255,255,0.7) 100%)',
+                        backdropFilter: 'blur(10px)',
+                        border: '1px solid rgba(255,255,255,0.3)',
+                        borderRadius: '8px',
+                        '&:hover': {
+                          border: '1px solid rgba(99, 102, 241, 0.3)',
+                        },
+                        '&.Mui-focused': {
+                          border: '1px solid rgba(99, 102, 241, 0.5)',
+                          boxShadow: '0 0 0 2px rgba(99, 102, 241, 0.1)',
+                        }
+                      },
+                      '& input[type="date"]::-webkit-datetime-edit-fields-wrapper': {
+                        color: 'transparent'
+                      },
+                      '& input[type="date"]::-webkit-datetime-edit-text': {
+                        color: 'transparent'
+                      },
+                      '& input[type="date"]::-webkit-datetime-edit-month-field': {
+                        color: 'transparent'
+                      },
+                      '& input[type="date"]::-webkit-datetime-edit-day-field': {
+                        color: 'transparent'
+                      },
+                      '& input[type="date"]::-webkit-datetime-edit-year-field': {
+                        color: 'transparent'
+                      },
+                      '& input[type="date"]:focus::-webkit-datetime-edit-fields-wrapper': {
+                        color: 'inherit'
+                      },
+                      '& input[type="date"]:focus::-webkit-datetime-edit-text': {
+                        color: 'inherit'
+                      },
+                      '& input[type="date"]:focus::-webkit-datetime-edit-month-field': {
+                        color: 'inherit'
+                      },
+                      '& input[type="date"]:focus::-webkit-datetime-edit-day-field': {
+                        color: 'inherit'
+                      },
+                      '& input[type="date"]:focus::-webkit-datetime-edit-year-field': {
+                        color: 'inherit'
+                      }
+                    }}
+                  />
+                </Grid>
+              </Grid>
+            </Grid>
+
+            {/* Country Filter */}
+            <Grid item xs={12}>
+              <Typography variant="subtitle1" gutterBottom sx={{ fontWeight: 600 }}>
+                Country/Location
+              </Typography>
+              <TextField
+                fullWidth
+                size="small"
+                placeholder="Enter country or location"
+                value={countryFilter || ''}
+                onChange={(e) => setCountryFilter(e.target.value || null)}
+                sx={{
+                  '& .MuiOutlinedInput-root': {
+                    background: 'linear-gradient(135deg, rgba(255,255,255,0.9) 0%, rgba(255,255,255,0.7) 100%)',
+                    backdropFilter: 'blur(10px)',
+                    border: '1px solid rgba(255,255,255,0.3)',
+                    borderRadius: '8px',
+                    '&:hover': {
+                      border: '1px solid rgba(99, 102, 241, 0.3)',
+                    },
+                    '&.Mui-focused': {
+                      border: '1px solid rgba(99, 102, 241, 0.5)',
+                      boxShadow: '0 0 0 2px rgba(99, 102, 241, 0.1)',
+                    }
+                  }
+                }}
+              />
+            </Grid>
+
+            {/* Text Content Filter */}
+            <Grid item xs={12}>
+              <Typography variant="subtitle1" gutterBottom sx={{ fontWeight: 600 }}>
+                Text Content
+              </Typography>
+              <TextField
+                fullWidth
+                size="small"
+                placeholder="Search in content text"
+                value={textFilter || ''}
+                onChange={(e) => setTextFilter(e.target.value || null)}
+                sx={{
+                  '& .MuiOutlinedInput-root': {
+                    background: 'linear-gradient(135deg, rgba(255,255,255,0.9) 0%, rgba(255,255,255,0.7) 100%)',
+                    backdropFilter: 'blur(10px)',
+                    border: '1px solid rgba(255,255,255,0.3)',
+                    borderRadius: '8px',
+                    '&:hover': {
+                      border: '1px solid rgba(99, 102, 241, 0.3)',
+                    },
+                    '&.Mui-focused': {
+                      border: '1px solid rgba(99, 102, 241, 0.5)',
+                      boxShadow: '0 0 0 2px rgba(99, 102, 241, 0.1)',
+                    }
+                  }
+                }}
+              />
+            </Grid>
+          </Grid>
+        </DialogContent>
+        <DialogActions sx={{ 
+          px: 3, 
+          py: 2, 
+          borderTop: '1px solid rgba(255,255,255,0.2)',
+          background: 'linear-gradient(135deg, rgba(255,255,255,0.1) 0%, rgba(255,255,255,0.05) 100%)',
+          backdropFilter: 'blur(10px)'
+        }}>
+          <Button 
+            onClick={clearFilters}
+            color="secondary"
+            sx={{
+              background: 'linear-gradient(135deg, rgba(255,255,255,0.9) 0%, rgba(255,255,255,0.7) 100%)',
+              backdropFilter: 'blur(10px)',
+              border: '1px solid rgba(255,255,255,0.3)',
+              '&:hover': {
+                background: 'linear-gradient(135deg, rgba(255,255,255,0.8) 0%, rgba(255,255,255,0.6) 100%)',
+              }
+            }}
+          >
+            Clear All
+          </Button>
+          <Button 
+            onClick={handleApplyFilters}
+            variant="contained"
+            sx={{
+              background: 'linear-gradient(135deg, rgba(99, 102, 241, 0.9) 0%, rgba(168, 85, 247, 0.9) 100%)',
+              backdropFilter: 'blur(10px)',
+              border: '1px solid rgba(99, 102, 241, 0.3)',
+              '&:hover': {
+                background: 'linear-gradient(135deg, rgba(99, 102, 241, 1) 0%, rgba(168, 85, 247, 1) 100%)',
+              }
+            }}
+          >
+            Apply Filters
+          </Button>
+        </DialogActions>
       </Dialog>
     </Box>
   );

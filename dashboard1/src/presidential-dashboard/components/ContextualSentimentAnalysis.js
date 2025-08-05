@@ -5,7 +5,7 @@ import {
   Paper,
   Grid,
   Card,
-  CardContent,
+
   Chip,
   CircularProgress,
   FormControl,
@@ -17,16 +17,13 @@ import {
   ListItemText,
   ListItemIcon,
   Divider,
-  Alert,
+
   IconButton,
   Tooltip,
   useTheme,
-  alpha
+
 } from '@mui/material';
 import {
-  TrendingUp as TrendingUpIcon,
-  TrendingDown as TrendingDownIcon,
-  Remove as RemoveIcon,
   Info as InfoIcon,
   Policy as PolicyIcon,
   LocationOn as LocationIcon,

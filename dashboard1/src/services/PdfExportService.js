@@ -48,7 +48,6 @@ const exportToPdf = async (title = 'Dashboard Export') => {
     pdf.setFontSize(12);
     
     let yOffset = margin + 20; // Starting Y position after title
-    let currentPage = 1;
     
     // Add timestamp to PDF
     const dateStr = new Date().toLocaleString();
@@ -83,7 +82,6 @@ const exportToPdf = async (title = 'Dashboard Export') => {
       if (yOffset + imgHeight > pageHeight - margin) {
         pdf.addPage();
         yOffset = margin + 10;
-        currentPage++;
       }
       
       // Add element title if available
@@ -121,6 +119,8 @@ const exportToPdf = async (title = 'Dashboard Export') => {
   }
 };
 
-export default {
+const PdfExportService = {
   exportToPdf
-}; 
+};
+
+export default PdfExportService; 

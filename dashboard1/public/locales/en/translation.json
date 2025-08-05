@@ -670,7 +670,7 @@
     "changeLanguage": "Change Language"
   },
   "home": {
-    "title": "Sentiment Dashboard Home",
+    "title": "Leader's Sentiment Dashboard",
     "welcomeMessage": "Welcome to your sentiment analysis dashboard.",
     "widgets": {
       "totalMentions": "Total Mentions",

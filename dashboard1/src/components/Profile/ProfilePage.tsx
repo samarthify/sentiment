@@ -9,12 +9,13 @@ import {
 import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutline';
 import HighlightOffIcon from '@mui/icons-material/HighlightOff';
 import AccountCircle from '@mui/icons-material/AccountCircle';
+import LogoutIcon from '@mui/icons-material/Logout';
 import { format } from 'date-fns';
 import { useTranslation } from 'react-i18next';
 
 export const ProfilePage: React.FC = () => {
   const { t } = useTranslation();
-  const { user } = useAuth(); // Get the current user
+  const { user, signOut } = useAuth(); // Get the current user
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [loading, setLoading] = useState(false); // Used for both password and profile update
@@ -131,6 +132,14 @@ export const ProfilePage: React.FC = () => {
       setDisplayName(user.email.split('@')[0]);
     } else {
       setDisplayName('');
+    }
+  };
+
+  const handleSignOut = async () => {
+    try {
+      await signOut();
+    } catch (error) {
+      console.error('Error signing out:', error);
     }
   };
 
@@ -318,6 +327,31 @@ export const ProfilePage: React.FC = () => {
             </Button>
           </Box>
         </Collapse>
+
+        {/* Sign Out Section */}
+        <Divider sx={{ my: 3 }} />
+        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+          <Typography variant="h6" color="error">{t('profile.accountActions', 'Account Actions')}</Typography>
+        </Box>
+        
+        <Button
+          fullWidth
+          variant="outlined"
+          color="error"
+          startIcon={<LogoutIcon />}
+          onClick={handleSignOut}
+          sx={{ 
+            py: 1.5,
+            borderColor: '#ef4444',
+            color: '#ef4444',
+            '&:hover': {
+              borderColor: '#dc2626',
+              backgroundColor: 'rgba(239, 68, 68, 0.04)',
+            }
+          }}
+        >
+          {t('profile.signOut', 'Sign Out')}
+        </Button>
 
       </Paper>
     </Container>

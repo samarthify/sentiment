@@ -1,14 +1,11 @@
-import React, { useState, useEffect } from 'react';
+import React, { useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
   Box,
   Container,
   Typography,
-  Paper,
-  Grid,
-  Card,
-  CardContent,
   Chip,
+  Paper,
 } from '@mui/material';
 import { useLocation } from 'react-router-dom';
 import SentimentDataTable from './SentimentDataTable';
@@ -59,75 +56,122 @@ const SentimentDataPage = ({ data }) => {
   const activeFilterText = getActiveFilterText();
   
   return (
-    <Container maxWidth="xl" sx={{ mt: 4, mb: 4 }}>
-      <Typography variant="h4" component="h1" gutterBottom sx={{ fontWeight: 600 }}>
-        {t('sentimentData.title')}
-      </Typography>
-      <Typography variant="body1" color="text.secondary" paragraph>
-        {t('sentimentData.description')}
-      </Typography>
+    <Box sx={{ 
+      width: '100%', 
+      height: '100vh',
+      background: 'linear-gradient(135deg, rgba(99, 102, 241, 0.05) 0%, rgba(168, 85, 247, 0.05) 100%)',
+      backdropFilter: 'blur(10px)',
+      position: 'relative',
+      overflow: 'hidden'
+    }}>
+      {/* Background decorative elements */}
+      <Box sx={{
+        position: 'absolute',
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        background: 'radial-gradient(circle at 20% 80%, rgba(99, 102, 241, 0.05) 0%, transparent 50%), radial-gradient(circle at 80% 20%, rgba(168, 85, 247, 0.05) 0%, transparent 50%)',
+        pointerEvents: 'none'
+      }} />
       
-      {activeFilterText && (
-        <Box sx={{ mb: 3 }}>
-          <Chip 
-            label={`${t('sentimentData.filteredBy')} ${activeFilterText}`}
-            color={getFilterColor()}
-            onDelete={() => window.location.href = '/sentiment-data'}
-            sx={{ fontWeight: 500 }}
-          />
+      <Container maxWidth="xl" sx={{ 
+        height: '100%',
+        display: 'flex',
+        flexDirection: 'column',
+        position: 'relative',
+        zIndex: 1
+      }}>
+        {/* Header Section */}
+        <Box sx={{ 
+          py: 3,
+          background: 'linear-gradient(135deg, rgba(255,255,255,0.9) 0%, rgba(255,255,255,0.7) 100%)',
+          backdropFilter: 'blur(15px)',
+          borderBottom: '1px solid rgba(255,255,255,0.3)',
+          boxShadow: '0 2px 10px rgba(0,0,0,0.05)',
+          borderRadius: '0 0 16px 16px',
+          mb: 2
+        }}>
+          <Typography 
+            variant="h4" 
+            component="h1" 
+            gutterBottom 
+            sx={{ 
+              fontWeight: 700,
+              background: 'linear-gradient(135deg, #6366f1 0%, #a855f7 100%)',
+              backgroundClip: 'text',
+              WebkitBackgroundClip: 'text',
+              WebkitTextFillColor: 'transparent',
+              textShadow: '0 2px 4px rgba(0,0,0,0.1)'
+            }}
+          >
+            {t('sentimentData.title')}
+          </Typography>
+          <Typography 
+            variant="body1" 
+            color="text.secondary" 
+            paragraph
+            sx={{ 
+              fontWeight: 500,
+              color: 'rgba(0,0,0,0.7)'
+            }}
+          >
+            {t('sentimentData.description')}
+          </Typography>
+          
+          {activeFilterText && (
+            <Box sx={{ mt: 2 }}>
+              <Chip 
+                label={`${t('sentimentData.filteredBy')} ${activeFilterText}`}
+                color={getFilterColor()}
+                onDelete={() => window.location.href = '/sentiment-data'}
+                sx={{ 
+                  fontWeight: 600,
+                  background: 'linear-gradient(135deg, rgba(99, 102, 241, 0.1) 0%, rgba(168, 85, 247, 0.1) 100%)',
+                  backdropFilter: 'blur(10px)',
+                  border: '1px solid rgba(99, 102, 241, 0.2)',
+                  '&:hover': {
+                    background: 'linear-gradient(135deg, rgba(99, 102, 241, 0.15) 0%, rgba(168, 85, 247, 0.15) 100%)',
+                  }
+                }}
+              />
+            </Box>
+          )}
         </Box>
-      )}
-      
-      <Grid container spacing={3} sx={{ mb: 4 }}>
-        <Grid item xs={12} md={4}>
-          <Card sx={{ height: '100%', boxShadow: '0 4px 12px rgba(0,0,0,0.05)' }}>
-            <CardContent>
-              <Typography variant="h6" component="div" gutterBottom>
-                {t('sentimentData.dataOverviewTitle')}
-              </Typography>
-              <Typography variant="body2" color="text.secondary">
-                {t('sentimentData.dataOverviewText')}
-              </Typography>
-            </CardContent>
-          </Card>
-        </Grid>
-        <Grid item xs={12} md={4}>
-          <Card sx={{ height: '100%', boxShadow: '0 4px 12px rgba(0,0,0,0.05)' }}>
-            <CardContent>
-              <Typography variant="h6" component="div" gutterBottom>
-                {t('sentimentData.usageGuideTitle')}
-              </Typography>
-              <Typography variant="body2" color="text.secondary">
-                {t('sentimentData.usageGuideText')}
-              </Typography>
-            </CardContent>
-          </Card>
-        </Grid>
-        <Grid item xs={12} md={4}>
-          <Card sx={{ height: '100%', boxShadow: '0 4px 12px rgba(0,0,0,0.05)' }}>
-            <CardContent>
-              <Typography variant="h6" component="div" gutterBottom>
-                {t('sentimentData.dataSourceTitle')}
-              </Typography>
-              <Typography variant="body2" color="text.secondary">
-                {t('sentimentData.dataSourceText')}
-              </Typography>
-            </CardContent>
-          </Card>
-        </Grid>
-      </Grid>
-      
-      <Box id="sentiment-data-table" sx={{ mb: 4 }}>
-        <SentimentDataTable 
-          data={data}
-          initialSentimentFilter={sentimentFilter}
-          initialSourceFilter={sourceFilter}
-          initialDateFilter={dateFilter}
-          initialCountryFilter={countryFilter}
-          initialTextFilter={textFilter}
-        />
-      </Box>
-    </Container>
+        
+        {/* Table Section - Fill remaining space */}
+        <Box 
+          id="sentiment-data-table" 
+          sx={{ 
+            flex: 1,
+            display: 'flex',
+            flexDirection: 'column',
+            minHeight: 0 // Important for flex child
+          }}
+        >
+          <Paper sx={{
+            flex: 1,
+            background: 'linear-gradient(135deg, rgba(255,255,255,0.95) 0%, rgba(255,255,255,0.85) 100%)',
+            backdropFilter: 'blur(20px)',
+            border: '1px solid rgba(255,255,255,0.3)',
+            borderRadius: '16px',
+            boxShadow: '0 8px 32px rgba(0,0,0,0.1)',
+            overflow: 'hidden',
+            display: 'flex',
+            flexDirection: 'column'
+          }}>
+            <SentimentDataTable 
+              data={data}
+              initialSentimentFilter={sentimentFilter}
+              initialSourceFilter={sourceFilter}
+              initialDateFilter={dateFilter}
+              initialCountryFilter={countryFilter}
+              initialTextFilter={textFilter}
+            />
+          </Paper>
+        </Box>
+      </Container>
+    </Box>
   );
 };
 
