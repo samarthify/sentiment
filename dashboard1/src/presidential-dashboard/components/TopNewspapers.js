@@ -43,6 +43,8 @@ try {
 const TopNewspapers = () => {
   const [selectedSource, setSelectedSource] = useState(null);
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [selectedArticle, setSelectedArticle] = useState(null);
+  const [articleDialogOpen, setArticleDialogOpen] = useState(false);
   const [topNewspapers, setTopNewspapers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -57,7 +59,14 @@ const TopNewspapers = () => {
         setLoading(true);
         setError(null);
         const data = await DataService.getNewspaperSources(accessToken);
-        setTopNewspapers(data);
+        
+        // Filter out businessdayonline newspaper
+        const filteredData = data.filter(newspaper => 
+          !newspaper.name.toLowerCase().includes('businessdayonline') &&
+          !newspaper.name.toLowerCase().includes('business day online')
+        );
+        
+        setTopNewspapers(filteredData);
       } catch (err) {
         console.error('Error fetching newspaper sources:', err);
         setError(err.message || 'Failed to load newspaper sources');
@@ -90,6 +99,17 @@ const TopNewspapers = () => {
   const handleCloseDialog = () => {
     setDialogOpen(false);
     setSelectedSource(null);
+  };
+
+  const handleArticleClick = (article) => {
+    console.log('Article clicked:', article);
+    setSelectedArticle(article);
+    setArticleDialogOpen(true);
+  };
+
+  const handleCloseArticleDialog = () => {
+    setArticleDialogOpen(false);
+    setSelectedArticle(null);
   };
 
   if (loading) {
@@ -306,7 +326,17 @@ const TopNewspapers = () => {
                   </Typography>
                   <List dense>
                     {selectedSource.recent_articles && selectedSource.recent_articles.map((article, idx) => (
-                      <ListItem key={idx} sx={{ px: 0 }}>
+                      <ListItem 
+                        key={idx} 
+                        sx={{ 
+                          px: 0, 
+                          cursor: 'pointer',
+                          '&:hover': { backgroundColor: 'action.hover' },
+                          borderRadius: 1,
+                          mb: 1
+                        }}
+                        onClick={() => handleArticleClick(article)}
+                      >
                         <ListItemIcon>
                           <Chip
                             label={article.sentiment}
@@ -320,6 +350,9 @@ const TopNewspapers = () => {
                           secondary={article.date}
                           primaryTypographyProps={{ fontSize: '0.9rem' }}
                         />
+                        <IconButton size="small">
+                          <OpenInNewIcon />
+                        </IconButton>
                       </ListItem>
                     ))}
                   </List>
@@ -335,6 +368,122 @@ const TopNewspapers = () => {
               >
                 Visit Website
               </Button>
+            </DialogActions>
+          </>
+        )}
+      </Dialog>
+
+      {/* Article Detail Dialog */}
+      <Dialog 
+        open={articleDialogOpen} 
+        onClose={handleCloseArticleDialog}
+        maxWidth="md"
+        fullWidth
+      >
+        {selectedArticle && (
+          <>
+            {/* Debug info - remove this later */}
+            <Box sx={{ p: 2, backgroundColor: 'yellow', fontSize: '12px' }}>
+              Debug: {JSON.stringify(selectedArticle, null, 2)}
+            </Box>
+            <DialogTitle>
+              <Box display="flex" alignItems="center" justifyContent="space-between">
+                <Box display="flex" alignItems="center">
+                  <Avatar sx={{ bgcolor: 'primary.main', mr: 2 }}>
+                    📰
+                  </Avatar>
+                  <Box>
+                    <Typography variant="h6">{selectedArticle.title}</Typography>
+                    <Typography variant="body2" color="text.secondary">
+                      {selectedArticle.source_name} • {selectedArticle.date}
+                    </Typography>
+                  </Box>
+                </Box>
+                <Chip
+                  label={selectedArticle.sentiment}
+                  color={selectedArticle.sentiment === 'positive' ? 'success' : 
+                         selectedArticle.sentiment === 'negative' ? 'error' : 'warning'}
+                  size="medium"
+                />
+              </Box>
+            </DialogTitle>
+            <DialogContent>
+              <Grid container spacing={3}>
+                <Grid item xs={12} md={6}>
+                  <Typography variant="h6" gutterBottom>
+                    Sentiment Analysis
+                  </Typography>
+                  <Box mb={3}>
+                    <Typography variant="body2" color="text.secondary" gutterBottom>
+                      Sentiment Score
+                    </Typography>
+                    <Box display="flex" alignItems="center" mb={2}>
+                      <Chip
+                        icon={getSentimentIcon(selectedArticle.sentiment_score)}
+                        label={`${(selectedArticle.sentiment_score * 100).toFixed(0)}%`}
+                        color={getSentimentColor(selectedArticle.sentiment_score)}
+                        size="medium"
+                      />
+                    </Box>
+                    <LinearProgress
+                      variant="determinate"
+                      value={Math.abs(selectedArticle.sentiment_score * 100)}
+                      color={getSentimentColor(selectedArticle.sentiment_score)}
+                      sx={{ height: 8, borderRadius: 4 }}
+                    />
+                  </Box>
+
+                  <Box mb={3}>
+                    <Typography variant="h6" gutterBottom>
+                      AI Justification
+                    </Typography>
+                    <Card variant="outlined" sx={{ p: 2, backgroundColor: 'grey.50' }}>
+                      <Typography variant="body2" sx={{ whiteSpace: 'pre-wrap' }}>
+                        {selectedArticle.sentiment_justification}
+                      </Typography>
+                    </Card>
+                  </Box>
+                </Grid>
+
+                <Grid item xs={12} md={6}>
+                  <Typography variant="h6" gutterBottom>
+                    Article Content
+                  </Typography>
+                  <Card variant="outlined" sx={{ p: 2, maxHeight: 300, overflow: 'auto' }}>
+                    <Typography variant="body2" sx={{ whiteSpace: 'pre-wrap' }}>
+                      {selectedArticle.text}
+                    </Typography>
+                  </Card>
+
+                  {selectedArticle.url && (
+                    <Box mt={2}>
+                      <Typography variant="body2" color="text.secondary" gutterBottom>
+                        Source URL
+                      </Typography>
+                      <Button
+                        variant="outlined"
+                        startIcon={<OpenInNewIcon />}
+                        onClick={() => window.open(selectedArticle.url, '_blank')}
+                        fullWidth
+                      >
+                        View Original Article
+                      </Button>
+                    </Box>
+                  )}
+                </Grid>
+              </Grid>
+            </DialogContent>
+            <DialogActions>
+              <Button onClick={handleCloseArticleDialog}>Close</Button>
+              {selectedArticle.url && (
+                <Button 
+                  variant="contained" 
+                  startIcon={<OpenInNewIcon />}
+                  onClick={() => window.open(selectedArticle.url, '_blank')}
+                >
+                  Open Article
+                </Button>
+              )}
             </DialogActions>
           </>
         )}

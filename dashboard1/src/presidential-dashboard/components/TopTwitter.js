@@ -31,9 +31,11 @@ import {
   Person as PersonIcon,
   Group as GroupIcon,
   Business as BusinessIcon,
-  Twitter as TwitterIcon
+  Twitter as TwitterIcon,
+  Visibility as VisibilityIcon
 } from '@mui/icons-material';
 import { motion } from 'framer-motion';
+import { useNavigate } from 'react-router-dom';
 import DataService from '../../services/DataService';
 
 // Import useAuth hook or create a fallback
@@ -52,6 +54,7 @@ const TopTwitter = () => {
   const [topTwitter, setTopTwitter] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const navigate = useNavigate();
   
   // Use the imported hook or fallback
   const authContext = useAuth();
@@ -122,6 +125,16 @@ const TopTwitter = () => {
   const handleCloseDialog = () => {
     setDialogOpen(false);
     setSelectedSource(null);
+  };
+
+  const handleViewTweets = (source) => {
+    // Navigate to sentiment data page with the influencer's handle as search term
+    navigate('/sentiment-data', { 
+      state: { 
+        searchTerm: source.handle || source.name 
+      } 
+    });
+    handleCloseDialog();
   };
 
   if (loading) {
@@ -203,9 +216,21 @@ const TopTwitter = () => {
                         </Typography>
                       </Box>
                     </Box>
-                    <IconButton size="small">
-                      <OpenInNewIcon />
-                    </IconButton>
+                    <Box display="flex" gap={1}>
+                      <IconButton 
+                        size="small"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleViewTweets(account);
+                        }}
+                        title="View Tweets"
+                      >
+                        <VisibilityIcon />
+                      </IconButton>
+                      <IconButton size="small">
+                        <OpenInNewIcon />
+                      </IconButton>
+                    </Box>
                   </Box>
 
                   <Box mb={2}>
@@ -362,6 +387,14 @@ const TopTwitter = () => {
             
             <DialogActions>
               <Button onClick={handleCloseDialog}>Close</Button>
+              <Button 
+                onClick={() => handleViewTweets(selectedSource)}
+                variant="contained" 
+                color="primary"
+                startIcon={<VisibilityIcon />}
+              >
+                View Tweets
+              </Button>
             </DialogActions>
           </>
         )}

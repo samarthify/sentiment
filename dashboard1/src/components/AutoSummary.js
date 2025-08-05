@@ -80,7 +80,8 @@ const AutoSummary = ({ data }) => {
     topPositiveThemes: [],
     topNegativeThemes: [],
     insightsAndRecommendations: [],
-    recentChanges: []
+    recentChanges: [],
+    fallbackStrategy: null // Track which fallback strategy was used
   });
   const [refreshing, setRefreshing] = useState(false);
 
@@ -117,6 +118,15 @@ const AutoSummary = ({ data }) => {
     if (!data) return;
     setLoading(true);
 
+    // Debug logging for data structure
+    console.log('AutoSummary received data:', {
+      hasRawData: !!data.rawData,
+      rawDataLength: data.rawData?.length || 0,
+      hasMetrics: !!data.metrics,
+      metrics: data.metrics,
+      sampleRawData: data.rawData?.slice(0, 3) || []
+    });
+
     // Generate AI-like summaries from the data
     const generateSummaries = () => {
       const summaries = {
@@ -125,11 +135,29 @@ const AutoSummary = ({ data }) => {
         topPositiveThemes: [],
         topNegativeThemes: [],
         insightsAndRecommendations: [],
-        recentChanges: []
+        recentChanges: [],
+        fallbackStrategy: null
       };
 
       // Process data to extract insights
       if (data.rawData && data.rawData.length > 0) {
+        // Debug sentiment distribution
+        const sentimentScores = data.rawData.map(item => parseFloat(item.sentiment_score || item.sentiment || 0));
+        const negativeScores = sentimentScores.filter(score => score < -0.1);
+        const positiveScores = sentimentScores.filter(score => score > 0.1);
+        const neutralScores = sentimentScores.filter(score => score >= -0.1 && score <= 0.1);
+        
+        console.log('Sentiment analysis debug:', {
+          totalItems: data.rawData.length,
+          negativeScores: negativeScores.length,
+          positiveScores: positiveScores.length,
+          neutralScores: neutralScores.length,
+          averageSentiment: sentimentScores.reduce((sum, score) => sum + score, 0) / sentimentScores.length,
+          minSentiment: Math.min(...sentimentScores),
+          maxSentiment: Math.max(...sentimentScores),
+          sampleNegativeScores: negativeScores.slice(0, 5)
+        });
+        
         // Use metrics from the filteredData if available, otherwise calculate them
         const positivePercentage = data.metrics?.positivePercentage || 
           (data.rawData.filter(item => parseFloat(item.sentiment_score || item.sentiment || 0) > 0.2).length / data.rawData.length * 100).toFixed(1);
@@ -231,9 +259,32 @@ const AutoSummary = ({ data }) => {
         
         // Extract negative themes
         const negativeThemes = Object.entries(wordFrequency)
-          .filter(([_, stats]) => stats.count >= 3 && stats.averageSentiment < -0.3)
+          .filter(([_, stats]) => stats.count >= 2 && stats.averageSentiment < -0.1) // Reduced threshold from 3 to 2 and -0.3 to -0.1
           .sort((a, b) => a[1].averageSentiment - b[1].averageSentiment)
           .slice(0, 10);
+        
+        // Debug logging for negative themes
+        console.log('Negative themes filtering:', {
+          totalWords: Object.keys(wordFrequency).length,
+          wordsWithNegativeSentiment: Object.entries(wordFrequency).filter(([_, stats]) => stats.averageSentiment < -0.1).length,
+          wordsWithEnoughCount: Object.entries(wordFrequency).filter(([_, stats]) => stats.count >= 2).length,
+          negativeThemesFound: negativeThemes.length,
+          sampleNegativeWords: Object.entries(wordFrequency)
+            .filter(([_, stats]) => stats.averageSentiment < -0.1)
+            .slice(0, 5)
+            .map(([word, stats]) => ({ word, count: stats.count, avgSentiment: stats.averageSentiment }))
+        });
+        
+        // Additional debugging for sentiment distribution
+        const allSentimentScores = Object.values(wordFrequency).map(stats => stats.averageSentiment);
+        console.log('Sentiment score distribution:', {
+          min: Math.min(...allSentimentScores),
+          max: Math.max(...allSentimentScores),
+          avg: allSentimentScores.reduce((sum, score) => sum + score, 0) / allSentimentScores.length,
+          negativeCount: allSentimentScores.filter(score => score < -0.1).length,
+          positiveCount: allSentimentScores.filter(score => score > 0.1).length,
+          neutralCount: allSentimentScores.filter(score => score >= -0.1 && score <= 0.1).length
+        });
         
         // Group by date to analyze trends
         const dateGroups = {};
@@ -413,6 +464,240 @@ const AutoSummary = ({ data }) => {
             })
           });
         });
+        
+        // Fallback: If no negative themes found with strict criteria, try with more lenient criteria
+        if (negativeThemes.length === 0) {
+          console.log('No negative themes found with strict criteria, trying fallback...');
+          summaries.fallbackStrategy = 'strictNegativeThemes';
+          
+          // Strategy 1: Look for words with negative sentiment but lower frequency
+          const lenientNegativeThemes = Object.entries(wordFrequency)
+            .filter(([_, stats]) => stats.count >= 1 && stats.averageSentiment < -0.05) // Very lenient criteria
+            .sort((a, b) => a[1].averageSentiment - b[1].averageSentiment)
+            .slice(0, 5);
+          
+          console.log('Lenient negative themes:', lenientNegativeThemes);
+          
+          if (lenientNegativeThemes.length > 0) {
+            lenientNegativeThemes.forEach(([word, stats]) => {
+              summaries.topNegativeThemes.push({
+                term: word,
+                sentimentScore: stats.averageSentiment.toFixed(2),
+                frequency: stats.count,
+                description: t('autoSummary.themes.negativeAssociation', {
+                  word,
+                  negative: stats.negativeCount,
+                  total: stats.count
+                })
+              });
+            });
+          } else {
+            // Strategy 2: Look for words that appear in negative contexts
+            const negativeContextWords = Object.entries(wordFrequency)
+              .filter(([_, stats]) => stats.count >= 1 && stats.negativeCount > 0)
+              .sort((a, b) => (b[1].negativeCount / b[1].count) - (a[1].negativeCount / a[1].count))
+              .slice(0, 5);
+            
+            console.log('Negative context words:', negativeContextWords);
+            summaries.fallbackStrategy = 'negativeContextWords';
+            
+            negativeContextWords.forEach(([word, stats]) => {
+              const negativeRatio = ((stats.negativeCount / stats.count) * 100).toFixed(1);
+              summaries.topNegativeThemes.push({
+                term: word,
+                sentimentScore: stats.averageSentiment.toFixed(2),
+                frequency: stats.count,
+                description: `Term "${word}" appears in ${negativeRatio}% negative contexts`
+              });
+            });
+          }
+        }
+        
+        // Final fallback: If still no themes, show the most frequently mentioned words with lowest sentiment
+        if (summaries.topNegativeThemes.length === 0) {
+          console.log('Still no negative themes, using final fallback...');
+          summaries.fallbackStrategy = 'noNegativeThemes';
+          
+          // Strategy 3: Analyze sentiment patterns in the data
+          const sentimentAnalysis = {
+            totalItems: data.rawData.length,
+            negativeItems: data.rawData.filter(item => parseFloat(item.sentiment_score || item.sentiment || 0) < -0.1).length,
+            positiveItems: data.rawData.filter(item => parseFloat(item.sentiment_score || item.sentiment || 0) > 0.1).length,
+            neutralItems: data.rawData.filter(item => {
+              const score = parseFloat(item.sentiment_score || item.sentiment || 0);
+              return score >= -0.1 && score <= 0.1;
+            }).length
+          };
+          
+          console.log('Sentiment analysis for fallback:', sentimentAnalysis);
+          
+          // Find words that appear in negative items
+          const negativeItemWords = {};
+          data.rawData.forEach(item => {
+            const sentiment = parseFloat(item.sentiment_score || item.sentiment || 0);
+            if (sentiment < -0.1 && item.text) {
+              const words = item.text.toLowerCase().replace(/[^a-z0-9 ]/g, ' ').split(' ');
+              words.forEach(word => {
+                if (word.length >= 3 && !excludedWords.has(word)) {
+                  if (!negativeItemWords[word]) {
+                    negativeItemWords[word] = { count: 0, totalSentiment: 0 };
+                  }
+                  negativeItemWords[word].count += 1;
+                  negativeItemWords[word].totalSentiment += sentiment;
+                }
+              });
+            }
+          });
+          
+          const negativeWords = Object.entries(negativeItemWords)
+            .filter(([_, stats]) => stats.count >= 1)
+            .map(([word, stats]) => ({
+              word,
+              count: stats.count,
+              averageSentiment: stats.totalSentiment / stats.count
+            }))
+            .sort((a, b) => a.averageSentiment - b.averageSentiment)
+            .slice(0, 3);
+          
+          console.log('Words from negative items:', negativeWords);
+          
+          if (negativeWords.length > 0) {
+            negativeWords.forEach(({ word, count, averageSentiment }) => {
+              summaries.topNegativeThemes.push({
+                term: word,
+                sentimentScore: averageSentiment.toFixed(2),
+                frequency: count,
+                description: `Appears ${count} times in negative content`
+              });
+            });
+          } else {
+            // Strategy 4: Show most frequent words with lowest sentiment
+            const allWords = Object.entries(wordFrequency)
+              .filter(([_, stats]) => stats.count >= 1)
+              .sort((a, b) => a[1].averageSentiment - b[1].averageSentiment)
+              .slice(0, 3);
+            
+            console.log('Final fallback themes:', allWords);
+            
+            allWords.forEach(([word, stats]) => {
+              summaries.topNegativeThemes.push({
+                term: word,
+                sentimentScore: stats.averageSentiment.toFixed(2),
+                frequency: stats.count,
+                description: `Term "${word}" appears ${stats.count} times with average sentiment of ${stats.averageSentiment.toFixed(2)}`
+              });
+            });
+          }
+        }
+        
+        // Ultimate fallback: If still no themes, create synthetic themes based on data analysis
+        if (summaries.topNegativeThemes.length === 0) {
+          console.log('No themes found at all, creating synthetic themes...');
+          summaries.fallbackStrategy = 'syntheticThemes';
+          
+          // Analyze the data structure to understand what we're working with
+          const dataAnalysis = {
+            totalRecords: data.rawData.length,
+            hasSentimentScores: data.rawData.some(item => item.sentiment_score !== undefined),
+            hasSentimentLabels: data.rawData.some(item => item.sentiment_label !== undefined),
+            platforms: [...new Set(data.rawData.map(item => item.platform).filter(Boolean))],
+            sources: [...new Set(data.rawData.map(item => item.source).filter(Boolean))],
+            countries: [...new Set(data.rawData.map(item => item.country).filter(Boolean))]
+          };
+          
+          console.log('Data analysis for synthetic themes:', dataAnalysis);
+          
+          // Strategy 1: Look for domain-specific negative indicators
+          const domainSpecificIndicators = {
+            political: ['criticism', 'opposition', 'protest', 'dispute', 'controversy', 'scandal'],
+            business: ['loss', 'decline', 'failure', 'crisis', 'bankruptcy', 'layoff'],
+            social: ['conflict', 'tension', 'division', 'disagreement', 'dispute'],
+            general: ['problem', 'issue', 'concern', 'challenge', 'difficulty', 'trouble']
+          };
+          
+          // Determine the most relevant domain based on data
+          let relevantDomain = 'general';
+          const textContent = data.rawData.map(item => item.text || '').join(' ').toLowerCase();
+          
+          if (textContent.includes('political') || textContent.includes('election') || textContent.includes('government')) {
+            relevantDomain = 'political';
+          } else if (textContent.includes('business') || textContent.includes('market') || textContent.includes('economy')) {
+            relevantDomain = 'business';
+          } else if (textContent.includes('social') || textContent.includes('community') || textContent.includes('society')) {
+            relevantDomain = 'social';
+          }
+          
+          console.log('Relevant domain for negative indicators:', relevantDomain);
+          
+          const indicators = domainSpecificIndicators[relevantDomain];
+          const foundIndicators = indicators.filter(indicator => 
+            wordFrequency[indicator] && wordFrequency[indicator].count > 0
+          );
+          
+          if (foundIndicators.length > 0) {
+            foundIndicators.slice(0, 3).forEach(indicator => {
+              const stats = wordFrequency[indicator];
+              summaries.topNegativeThemes.push({
+                term: indicator,
+                sentimentScore: stats.averageSentiment.toFixed(2),
+                frequency: stats.count,
+                description: `${relevantDomain.charAt(0).toUpperCase() + relevantDomain.slice(1)} negative indicator "${indicator}" appears ${stats.count} times`
+              });
+            });
+          } else {
+            // Strategy 2: Analyze sentiment patterns by platform/source
+            const platformSentiment = {};
+            data.rawData.forEach(item => {
+              const platform = item.platform || 'Unknown';
+              const sentiment = parseFloat(item.sentiment_score || item.sentiment || 0);
+              
+              if (!platformSentiment[platform]) {
+                platformSentiment[platform] = { count: 0, totalSentiment: 0, items: [] };
+              }
+              
+              platformSentiment[platform].count += 1;
+              platformSentiment[platform].totalSentiment += sentiment;
+              platformSentiment[platform].items.push(item);
+            });
+            
+            // Find platform with most negative sentiment
+            const platforms = Object.entries(platformSentiment)
+              .filter(([_, stats]) => stats.count >= 2)
+              .map(([platform, stats]) => ({
+                platform,
+                averageSentiment: stats.totalSentiment / stats.count,
+                count: stats.count
+              }))
+              .sort((a, b) => a.averageSentiment - b.averageSentiment);
+            
+            console.log('Platform sentiment analysis:', platforms);
+            
+            if (platforms.length > 0 && platforms[0].averageSentiment < 0) {
+              const worstPlatform = platforms[0];
+              summaries.topNegativeThemes.push({
+                term: worstPlatform.platform,
+                sentimentScore: worstPlatform.averageSentiment.toFixed(2),
+                frequency: worstPlatform.count,
+                description: `Content from ${worstPlatform.platform} shows most negative sentiment`
+              });
+            }
+            
+            // Strategy 3: Show most frequent words with context
+            const frequentWords = Object.entries(wordFrequency)
+              .filter(([_, stats]) => stats.count >= 2)
+              .sort((a, b) => b[1].count - a[1].count)
+              .slice(0, 2);
+            
+            frequentWords.forEach(([word, stats]) => {
+              summaries.topNegativeThemes.push({
+                term: word,
+                sentimentScore: stats.averageSentiment.toFixed(2),
+                frequency: stats.count,
+                description: `Frequent term "${word}" appears ${stats.count} times in analyzed content`
+              });
+            });
+          }
+        }
         
         // Generate insights and recommendations
         const generateInsight = (type, title, description) => ({
@@ -746,35 +1031,84 @@ const AutoSummary = ({ data }) => {
             <Typography variant="subtitle1" gutterBottom sx={{ display: 'flex', alignItems: 'center' }}>
               <ThumbDownIcon sx={{ mr: 1, color: getColor('error.main') }} />
               {t('autoSummary.sections.negativeThemes')}
+              {summaryData.topNegativeThemes.length > 0 && (
+                <Chip 
+                  size="small" 
+                  label="Fallback Data" 
+                  sx={{ ml: 1, fontSize: '0.7rem', height: 20 }}
+                  color="warning"
+                />
+              )}
             </Typography>
-            <Grid container spacing={1}>
-              {summaryData.topNegativeThemes.slice(0, 6).map((theme, index) => (
-                <Grid item xs={12} sm={6} key={index}>
-                  <Card sx={{ backgroundColor: getAlphaColor('error.light', 0.05 + (0.1 * (1 - index/6))) }}>
-                    <CardContent sx={{ py: 1.5, px: 2, '&:last-child': { pb: 1.5 } }}>
-                      <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 0.5 }}>
-                        <Typography variant="subtitle2" fontWeight={600}>
-                          {theme.term}
+            {summaryData.topNegativeThemes.length > 0 ? (
+              <>
+                <Box sx={{ mb: 1 }}>
+                  <Typography variant="caption" color="text.secondary">
+                    Data Quality: {summaryData.topNegativeThemes.some(theme => 
+                      theme.description.includes('negative contexts') || 
+                      theme.description.includes('negative content')
+                    ) ? 'Good' : 'Limited'} 
+                    ({summaryData.topNegativeThemes.length} themes found)
+                    {summaryData.fallbackStrategy && (
+                      <span style={{ marginLeft: '8px', fontStyle: 'italic' }}>
+                        • Strategy: {summaryData.fallbackStrategy}
+                      </span>
+                    )}
+                  </Typography>
+                </Box>
+                <Grid container spacing={1}>
+                {summaryData.topNegativeThemes.slice(0, 6).map((theme, index) => (
+                  <Grid item xs={12} sm={6} key={index}>
+                    <Card sx={{ backgroundColor: getAlphaColor('error.light', 0.05 + (0.1 * (1 - index/6))) }}>
+                      <CardContent sx={{ py: 1.5, px: 2, '&:last-child': { pb: 1.5 } }}>
+                        <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 0.5 }}>
+                          <Typography variant="subtitle2" fontWeight={600}>
+                            {theme.term}
+                          </Typography>
+                          <Chip 
+                            size="small" 
+                            label={theme.sentimentScore} 
+                            sx={{ 
+                              backgroundColor: getColor('error.main'),
+                              color: 'white',
+                              fontSize: '0.7rem',
+                              height: 20
+                            }}
+                          />
+                        </Box>
+                        <Typography variant="caption" color="text.secondary">
+                          {theme.description}
                         </Typography>
-                        <Chip 
-                          size="small" 
-                          label={theme.sentimentScore} 
-                          sx={{ 
-                            backgroundColor: getColor('error.main'),
-                            color: 'white',
-                            fontSize: '0.7rem',
-                            height: 20
-                          }}
-                        />
-                      </Box>
-                      <Typography variant="caption" color="text.secondary">
-                        {theme.description}
-                      </Typography>
-                    </CardContent>
-                  </Card>
-                </Grid>
-              ))}
-            </Grid>
+                        {theme.description.includes('Fallback') || theme.description.includes('synthetic') ? (
+                          <Typography variant="caption" sx={{ display: 'block', mt: 0.5, color: 'warning.main', fontStyle: 'italic' }}>
+                            Generated from limited data
+                          </Typography>
+                        ) : null}
+                      </CardContent>
+                    </Card>
+                  </Grid>
+                ))}
+              </Grid>
+            </>
+            ) : (
+              <Alert severity="info" sx={{ mt: 1 }}>
+                <Typography variant="body2">
+                  No significant negative themes detected in the current dataset. This could indicate:
+                </Typography>
+                <Typography variant="body2" component="ul" sx={{ mt: 1, mb: 0 }}>
+                  <li>Limited negative sentiment in the analyzed content</li>
+                  <li>Insufficient data volume for theme detection</li>
+                  <li>Positive overall sentiment trend</li>
+                  <li>Data may need more time to accumulate negative mentions</li>
+                </Typography>
+                <Typography variant="body2" sx={{ mt: 1, fontStyle: 'italic' }}>
+                  Consider expanding your data collection or adjusting sentiment analysis parameters if you expect to see negative themes.
+                </Typography>
+                <Typography variant="body2" sx={{ mt: 1, fontSize: '0.8rem', color: 'text.secondary' }}>
+                  Debug info: Check browser console for detailed sentiment analysis data.
+                </Typography>
+              </Alert>
+            )}
           </Grid>
 
           {/* Recent Changes */}

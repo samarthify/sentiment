@@ -18,16 +18,17 @@ const SentimentDataPage = ({ data }) => {
   const dateFilter = location.state?.dateFilter || null;
   const countryFilter = location.state?.countryFilter || null;
   const textFilter = location.state?.textFilter || null;
+  const searchTerm = location.state?.searchTerm || null;
   
   useEffect(() => {
     // When the page loads with any filter, scroll to table section
-    if (sentimentFilter || sourceFilter || dateFilter || countryFilter || textFilter) {
+    if (sentimentFilter || sourceFilter || dateFilter || countryFilter || textFilter || searchTerm) {
       const tableElement = document.getElementById('sentiment-data-table');
       if (tableElement) {
         tableElement.scrollIntoView({ behavior: 'smooth' });
       }
     }
-  }, [sentimentFilter, sourceFilter, dateFilter, countryFilter, textFilter]);
+  }, [sentimentFilter, sourceFilter, dateFilter, countryFilter, textFilter, searchTerm]);
   
   // Determine the active filter for header display
   const getActiveFilterText = () => {
@@ -39,6 +40,7 @@ const SentimentDataPage = ({ data }) => {
     }
     if (countryFilter) return `${t('sentimentData.country')}: ${countryFilter}`;
     if (textFilter) return `${t('sentimentData.containing')}: ${textFilter}`;
+    if (searchTerm) return `${t('sentimentData.searchingFor')}: ${searchTerm}`;
     return null;
   };
   
@@ -50,6 +52,7 @@ const SentimentDataPage = ({ data }) => {
     if (dateFilter) return 'warning';
     if (countryFilter) return 'success';
     if (textFilter) return 'default';
+    if (searchTerm) return 'primary';
     return 'primary';
   };
   
@@ -84,25 +87,21 @@ const SentimentDataPage = ({ data }) => {
       }}>
         {/* Header Section */}
         <Box sx={{ 
-          py: 3,
-          background: 'linear-gradient(135deg, rgba(255,255,255,0.9) 0%, rgba(255,255,255,0.7) 100%)',
-          backdropFilter: 'blur(15px)',
-          borderBottom: '1px solid rgba(255,255,255,0.3)',
-          boxShadow: '0 2px 10px rgba(0,0,0,0.05)',
-          borderRadius: '0 0 16px 16px',
-          mb: 2
+          py: 4,
+          px: 0,
+          background: 'transparent'
         }}>
           <Typography 
             variant="h4" 
             component="h1" 
-            gutterBottom 
             sx={{ 
               fontWeight: 700,
               background: 'linear-gradient(135deg, #6366f1 0%, #a855f7 100%)',
               backgroundClip: 'text',
               WebkitBackgroundClip: 'text',
               WebkitTextFillColor: 'transparent',
-              textShadow: '0 2px 4px rgba(0,0,0,0.1)'
+              textShadow: '0 2px 4px rgba(0,0,0,0.1)',
+              mb: 2
             }}
           >
             {t('sentimentData.title')}
@@ -110,17 +109,17 @@ const SentimentDataPage = ({ data }) => {
           <Typography 
             variant="body1" 
             color="text.secondary" 
-            paragraph
             sx={{ 
               fontWeight: 500,
-              color: 'rgba(0,0,0,0.7)'
+              color: 'rgba(0,0,0,0.7)',
+              mb: 3
             }}
           >
             {t('sentimentData.description')}
           </Typography>
           
           {activeFilterText && (
-            <Box sx={{ mt: 2 }}>
+            <Box sx={{ mb: 3 }}>
               <Chip 
                 label={`${t('sentimentData.filteredBy')} ${activeFilterText}`}
                 color={getFilterColor()}
@@ -146,17 +145,13 @@ const SentimentDataPage = ({ data }) => {
             flex: 1,
             display: 'flex',
             flexDirection: 'column',
-            minHeight: 0 // Important for flex child
+            minHeight: 0, // Important for flex child
+            px: 0
           }}
         >
-          <Paper sx={{
+          <Box sx={{
             flex: 1,
-            background: 'linear-gradient(135deg, rgba(255,255,255,0.95) 0%, rgba(255,255,255,0.85) 100%)',
-            backdropFilter: 'blur(20px)',
-            border: '1px solid rgba(255,255,255,0.3)',
-            borderRadius: '16px',
-            boxShadow: '0 8px 32px rgba(0,0,0,0.1)',
-            overflow: 'hidden',
+            background: 'transparent',
             display: 'flex',
             flexDirection: 'column'
           }}>
@@ -167,8 +162,9 @@ const SentimentDataPage = ({ data }) => {
               initialDateFilter={dateFilter}
               initialCountryFilter={countryFilter}
               initialTextFilter={textFilter}
+              initialSearchTerm={searchTerm}
             />
-          </Paper>
+          </Box>
         </Box>
       </Container>
     </Box>

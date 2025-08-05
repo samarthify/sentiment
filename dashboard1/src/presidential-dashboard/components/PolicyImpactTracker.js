@@ -739,6 +739,70 @@ const PolicyImpactTracker = ({ data, loading }) => {
         <DialogContent sx={{ py: 3 }}>
           {selectedPolicyMentions.length > 0 ? (
             <Box>
+              {/* Sentiment Summary */}
+              <Box sx={{ 
+                mb: 3, 
+                p: 2, 
+                background: 'linear-gradient(135deg, rgba(255,255,255,0.9) 0%, rgba(255,255,255,0.7) 100%)',
+                backdropFilter: 'blur(10px)',
+                borderRadius: '12px',
+                border: '1px solid rgba(255,255,255,0.3)'
+              }}>
+                <Typography variant="h6" fontWeight={600} mb={2}>
+                  Sentiment Summary
+                </Typography>
+                <Grid container spacing={2}>
+                  {(() => {
+                    const positiveCount = selectedPolicyMentions.filter(m => m.sentiment_label === 'positive').length;
+                    const negativeCount = selectedPolicyMentions.filter(m => m.sentiment_label === 'negative').length;
+                    const neutralCount = selectedPolicyMentions.filter(m => m.sentiment_label === 'neutral').length;
+                    const total = selectedPolicyMentions.length;
+                    
+                    return (
+                      <>
+                        <Grid item xs={4}>
+                          <Box textAlign="center">
+                            <Typography variant="h4" color="success.main" fontWeight={700}>
+                              {positiveCount}
+                            </Typography>
+                            <Typography variant="body2" color="text.secondary">
+                              Positive ({((positiveCount / total) * 100).toFixed(1)}%)
+                            </Typography>
+                          </Box>
+                        </Grid>
+                        <Grid item xs={4}>
+                          <Box textAlign="center">
+                            <Typography variant="h4" color="error.main" fontWeight={700}>
+                              {negativeCount}
+                            </Typography>
+                            <Typography variant="body2" color="text.secondary">
+                              Negative ({((negativeCount / total) * 100).toFixed(1)}%)
+                            </Typography>
+                          </Box>
+                        </Grid>
+                        <Grid item xs={4}>
+                          <Box textAlign="center">
+                            <Typography variant="h4" color="primary.main" fontWeight={700}>
+                              {neutralCount}
+                            </Typography>
+                            <Typography variant="body2" color="text.secondary">
+                              Neutral ({((neutralCount / total) * 100).toFixed(1)}%)
+                            </Typography>
+                          </Box>
+                        </Grid>
+                      </>
+                    );
+                  })()}
+                </Grid>
+                <Box mt={2}>
+                  <Typography variant="body2" color="text.secondary">
+                    Average Sentiment Score: {
+                      (selectedPolicyMentions.reduce((sum, m) => sum + (m.sentiment_score || 0), 0) / selectedPolicyMentions.length).toFixed(3)
+                    }
+                  </Typography>
+                </Box>
+              </Box>
+              
               <Typography variant="body2" color="text.secondary" mb={3}>
                 Showing {selectedPolicyMentions.length} mentions related to this policy
               </Typography>
@@ -757,7 +821,7 @@ const PolicyImpactTracker = ({ data, loading }) => {
                         transition: 'all 0.2s ease-in-out'
                       }
                     }}>
-                      <Box display="flex" justifyContent="space-between" alignItems="flex-start" mb={1}>
+                      <Box display="flex" justifyContent="space-between" alignItems="flex-start" mb={2}>
                         <Box>
                           <Typography variant="subtitle2" fontWeight={600}>
                             {mention.source} - {mention.platform}
@@ -766,35 +830,76 @@ const PolicyImpactTracker = ({ data, loading }) => {
                             {formatDate(mention.date)}
                           </Typography>
                         </Box>
-                        <Chip
-                          label={mention.sentiment_label}
-                          size="small"
-                          color={mention.sentiment_label === 'positive' ? 'success' : 
-                                 mention.sentiment_label === 'negative' ? 'error' : 'primary'}
-                          sx={{ 
-                            fontWeight: 600,
-                            background: 'linear-gradient(135deg, rgba(255,255,255,0.9) 0%, rgba(255,255,255,0.7) 100%)',
-                            backdropFilter: 'blur(10px)',
-                            border: '1px solid rgba(255,255,255,0.3)',
-                            boxShadow: '0 2px 8px rgba(0,0,0,0.1)'
-                          }}
-                        />
+                        <Box display="flex" flexDirection="column" alignItems="flex-end" gap={1}>
+                          <Chip
+                            label={mention.sentiment_label.toUpperCase()}
+                            size="small"
+                            color={mention.sentiment_label === 'positive' ? 'success' : 
+                                   mention.sentiment_label === 'negative' ? 'error' : 'primary'}
+                            sx={{ 
+                              fontWeight: 700,
+                              fontSize: '0.7rem',
+                              background: mention.sentiment_label === 'positive' ? 
+                                'linear-gradient(135deg, rgba(76, 175, 80, 0.9) 0%, rgba(76, 175, 80, 0.7) 100%)' :
+                                mention.sentiment_label === 'negative' ? 
+                                'linear-gradient(135deg, rgba(244, 67, 54, 0.9) 0%, rgba(244, 67, 54, 0.7) 100%)' :
+                                'linear-gradient(135deg, rgba(33, 150, 243, 0.9) 0%, rgba(33, 150, 243, 0.7) 100%)',
+                              backdropFilter: 'blur(10px)',
+                              border: '1px solid rgba(255,255,255,0.3)',
+                              boxShadow: '0 2px 8px rgba(0,0,0,0.15)',
+                              color: 'white'
+                            }}
+                          />
+                          {mention.sentiment_score !== undefined && (
+                            <Typography 
+                              variant="caption" 
+                              fontWeight={700}
+                              sx={{
+                                color: mention.sentiment_label === 'positive' ? '#4caf50' : 
+                                       mention.sentiment_label === 'negative' ? '#f44336' : '#2196f3',
+                                fontSize: '0.75rem',
+                                background: 'rgba(255,255,255,0.9)',
+                                padding: '2px 6px',
+                                borderRadius: '4px',
+                                border: '1px solid rgba(0,0,0,0.1)'
+                              }}
+                            >
+                              Score: {mention.sentiment_score.toFixed(3)}
+                            </Typography>
+                          )}
+                        </Box>
                       </Box>
                       <Typography variant="body2" sx={{ 
-                        mt: 1,
-                        lineHeight: 1.5,
-                        color: 'rgba(0,0,0,0.8)'
+                        lineHeight: 1.6,
+                        color: 'rgba(0,0,0,0.85)',
+                        fontSize: '0.9rem'
                       }}>
                         {mention.text}
                       </Typography>
                       {mention.sentiment_score !== undefined && (
-                        <Box display="flex" alignItems="center" mt={1}>
-                          <Typography variant="caption" color="text.secondary" mr={1}>
-                            Sentiment Score:
-                          </Typography>
-                          <Typography variant="caption" fontWeight={600}>
-                            {mention.sentiment_score.toFixed(3)}
-                          </Typography>
+                        <Box mt={2}>
+                          <Box display="flex" justifyContent="space-between" alignItems="center" mb={1}>
+                            <Typography variant="caption" color="text.secondary" fontWeight={600}>
+                              Sentiment Intensity
+                            </Typography>
+                            <Typography variant="caption" fontWeight={600}>
+                              {Math.abs(mention.sentiment_score * 100).toFixed(1)}%
+                            </Typography>
+                          </Box>
+                          <LinearProgress
+                            variant="determinate"
+                            value={Math.abs(mention.sentiment_score * 100)}
+                            color={mention.sentiment_label === 'positive' ? 'success' : 
+                                   mention.sentiment_label === 'negative' ? 'error' : 'primary'}
+                            sx={{ 
+                              height: 6, 
+                              borderRadius: 3,
+                              backgroundColor: 'rgba(0,0,0,0.1)',
+                              '& .MuiLinearProgress-bar': {
+                                borderRadius: 3
+                              }
+                            }}
+                          />
                         </Box>
                       )}
                     </Paper>

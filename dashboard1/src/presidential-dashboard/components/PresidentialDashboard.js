@@ -612,7 +612,7 @@ const PresidentialDashboard = ({ userRole = 'president' }) => {
             pointerEvents: 'none',
           }
         }}>
-          <Container maxWidth="xl" sx={{ py: 3, pl: 0, pr: 0, position: 'relative', zIndex: 1 }}>
+          <Container maxWidth="xl" sx={{ py: 0, px: 0, position: 'relative', zIndex: 1 }}>
             <AnimatePresence mode="wait">
               <motion.div
                 key={activeTab}

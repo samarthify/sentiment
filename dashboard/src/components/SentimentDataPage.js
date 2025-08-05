@@ -21,16 +21,17 @@ const SentimentDataPage = ({ data }) => {
   const dateFilter = location.state?.dateFilter || null;
   const countryFilter = location.state?.countryFilter || null;
   const textFilter = location.state?.textFilter || null;
+  const searchTerm = location.state?.searchTerm || null;
   
   useEffect(() => {
     // When the page loads with any filter, scroll to table section
-    if (sentimentFilter || sourceFilter || dateFilter || countryFilter || textFilter) {
+    if (sentimentFilter || sourceFilter || dateFilter || countryFilter || textFilter || searchTerm) {
       const tableElement = document.getElementById('sentiment-data-table');
       if (tableElement) {
         tableElement.scrollIntoView({ behavior: 'smooth' });
       }
     }
-  }, [sentimentFilter, sourceFilter, dateFilter, countryFilter, textFilter]);
+  }, [sentimentFilter, sourceFilter, dateFilter, countryFilter, textFilter, searchTerm]);
   
   // Determine the active filter for header display
   const getActiveFilterText = () => {
@@ -42,6 +43,7 @@ const SentimentDataPage = ({ data }) => {
     }
     if (countryFilter) return `${t('sentimentData.country')}: ${countryFilter}`;
     if (textFilter) return `${t('sentimentData.containing')}: ${textFilter}`;
+    if (searchTerm) return `${t('sentimentData.searchingFor')}: ${searchTerm}`;
     return null;
   };
   
@@ -125,6 +127,7 @@ const SentimentDataPage = ({ data }) => {
           initialDateFilter={dateFilter}
           initialCountryFilter={countryFilter}
           initialTextFilter={textFilter}
+          initialSearchTerm={searchTerm}
         />
       </Box>
     </Container>

@@ -213,7 +213,7 @@ function App() {
   const [filteredData, setFilteredData] = useState(null);
   const [timeRange, setTimeRange] = useState('all');
   const isMobile = useMediaQuery(theme.breakpoints.down('md'));
-  const [drawerOpen, setDrawerOpen] = useState(!isMobile);
+  const [drawerOpen, setDrawerOpen] = useState(false);
   const [mobileMenuAnchorEl, setMobileMenuAnchorEl] = useState(null);
   const [profileMenuAnchorEl, setProfileMenuAnchorEl] = useState(null);
 
@@ -238,12 +238,12 @@ function App() {
     setProfileMenuAnchorEl(null);
   };
   
-  // Close drawer by default on mobile when screen size changes
+  // Keep drawer closed by default on all screen sizes
   useEffect(() => {
     if (isMobile) {
       setDrawerOpen(false);
     } else {
-      setDrawerOpen(true);
+      setDrawerOpen(false);
     }
   }, [isMobile]);
   
@@ -402,26 +402,56 @@ function App() {
               
 
               
-              <ContentContainer>
-                <Routes>
-                  <Route path="/" element={<Navigate to="/presidential" replace />} />
-                  <Route path="/sentiment-data" element={<SentimentDataPage data={filteredData?.rawData || []} />} />
-                  <Route path="/emotional-analysis" element={<EmotionalAnalysis />} />
-                  <Route path="/geographical-insights" element={<GeographicalInsights />} />
-                  <Route path="/theme-analysis" element={<ThemeAnalysis />} />
-                  <Route path="/event-analysis" element={<EventAnalysis />} />
-                  <Route path="/target-config" element={<TargetIndividualConfig />} />
-                  <Route path="/profile" element={<ProfilePage />} />
-                  <Route path="/email-config" element={<EmailConfig />} />
-                  
-                  {/* Presidential Dashboard Routes */}
-                  <Route path="/presidential" element={<PresidentialDashboard userRole="president" />} />
-                  <Route path="/media-team" element={<PresidentialDashboard userRole="media_team" />} />
-                  <Route path="/test-presidential" element={<TestComponent />} />
-                  
-                  <Route path="*" element={<Navigate to="/" replace />} />
-                </Routes>
-              </ContentContainer>
+              <Routes>
+                <Route path="/" element={<Navigate to="/presidential" replace />} />
+                <Route path="/sentiment-data" element={
+                  <ContentContainer>
+                    <SentimentDataPage data={filteredData?.rawData || []} />
+                  </ContentContainer>
+                } />
+                <Route path="/emotional-analysis" element={
+                  <ContentContainer>
+                    <EmotionalAnalysis />
+                  </ContentContainer>
+                } />
+                <Route path="/geographical-insights" element={
+                  <ContentContainer>
+                    <GeographicalInsights />
+                  </ContentContainer>
+                } />
+                <Route path="/theme-analysis" element={
+                  <ContentContainer>
+                    <ThemeAnalysis />
+                  </ContentContainer>
+                } />
+                <Route path="/event-analysis" element={
+                  <ContentContainer>
+                    <EventAnalysis />
+                  </ContentContainer>
+                } />
+                <Route path="/target-config" element={
+                  <ContentContainer>
+                    <TargetIndividualConfig />
+                  </ContentContainer>
+                } />
+                <Route path="/profile" element={
+                  <ContentContainer>
+                    <ProfilePage />
+                  </ContentContainer>
+                } />
+                <Route path="/email-config" element={
+                  <ContentContainer>
+                    <EmailConfig />
+                  </ContentContainer>
+                } />
+                
+                {/* Presidential Dashboard Routes - No padding */}
+                <Route path="/presidential" element={<PresidentialDashboard userRole="president" />} />
+                <Route path="/media-team" element={<PresidentialDashboard userRole="media_team" />} />
+                <Route path="/test-presidential" element={<TestComponent />} />
+                
+                <Route path="*" element={<Navigate to="/" replace />} />
+              </Routes>
             </Box>
           </MainContent>
         </Box>

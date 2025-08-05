@@ -40,11 +40,11 @@ import {
 } from '@mui/icons-material';
 import Papa from 'papaparse';
 
-const SentimentDataTable = ({ data: rawData, initialSentimentFilter = null, initialSourceFilter = null, initialDateFilter = null, initialCountryFilter = null, initialTextFilter = null }) => {
+const SentimentDataTable = ({ data: rawData, initialSentimentFilter = null, initialSourceFilter = null, initialDateFilter = null, initialCountryFilter = null, initialTextFilter = null, initialSearchTerm = null }) => {
   const { t } = useTranslation();
   const [page, setPage] = useState(0);
   const [rowsPerPage, setRowsPerPage] = useState(10);
-  const [searchTerm, setSearchTerm] = useState('');
+  const [searchTerm, setSearchTerm] = useState(initialSearchTerm || '');
   const [filteredData, setFilteredData] = useState([]);
   const [selectedRow, setSelectedRow] = useState(null);
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -117,8 +117,9 @@ const SentimentDataTable = ({ data: rawData, initialSentimentFilter = null, init
         
         // Apply source/platform filter if it exists
         if (sourceFilter && 
-            !(item.source?.toLowerCase() === sourceFilter.toLowerCase() || 
-              item.platform?.toLowerCase() === sourceFilter.toLowerCase())) {
+            !(item.source?.toLowerCase().includes(sourceFilter.toLowerCase()) || 
+              item.platform?.toLowerCase().includes(sourceFilter.toLowerCase()) ||
+              item.author?.toLowerCase().includes(sourceFilter.toLowerCase()))) {
           return false;
         }
         
@@ -263,9 +264,7 @@ const SentimentDataTable = ({ data: rawData, initialSentimentFilter = null, init
         py: 3, 
         pb: 2,
         px: 0,
-        background: 'linear-gradient(135deg, rgba(255,255,255,0.1) 0%, rgba(255,255,255,0.05) 100%)',
-        backdropFilter: 'blur(10px)',
-        borderBottom: '1px solid rgba(255,255,255,0.2)'
+        background: 'transparent'
       }}>
         <Box sx={{ 
           display: 'flex', 

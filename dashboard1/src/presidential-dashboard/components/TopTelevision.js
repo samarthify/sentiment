@@ -29,9 +29,11 @@ import {
   OpenInNew as OpenInNewIcon,
   Verified as VerifiedIcon,
   Tv as TvIcon,
-  LiveTv as LiveTvIcon
+  LiveTv as LiveTvIcon,
+  Visibility as VisibilityIcon
 } from '@mui/icons-material';
 import { motion } from 'framer-motion';
+import { useNavigate } from 'react-router-dom';
 import DataService from '../../services/DataService';
 
 // Import AuthContext with error handling
@@ -50,6 +52,7 @@ const TopTelevision = () => {
   const [topTelevision, setTopTelevision] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const navigate = useNavigate();
   
   // Use the imported hook or fallback
   const authContext = useAuth();
@@ -112,6 +115,16 @@ const TopTelevision = () => {
   const handleCloseDialog = () => {
     setDialogOpen(false);
     setSelectedSource(null);
+  };
+
+  const handleViewFeed = (source) => {
+    // Navigate to sentiment data page with the channel name as search term
+    navigate('/sentiment-data', { 
+      state: { 
+        searchTerm: source.name 
+      } 
+    });
+    handleCloseDialog();
   };
 
   if (loading) {
@@ -200,9 +213,21 @@ const TopTelevision = () => {
                         </Typography>
                       </Box>
                     </Box>
-                    <IconButton size="small">
-                      <TvIcon />
-                    </IconButton>
+                    <Box display="flex" gap={1}>
+                      <IconButton 
+                        size="small"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleViewFeed(channel);
+                        }}
+                        title="Go to Feed"
+                      >
+                        <VisibilityIcon />
+                      </IconButton>
+                      <IconButton size="small">
+                        <TvIcon />
+                      </IconButton>
+                    </Box>
                   </Box>
 
                   <Box mb={2}>
@@ -409,7 +434,15 @@ const TopTelevision = () => {
             <DialogActions>
               <Button onClick={handleCloseDialog}>Close</Button>
               <Button 
+                onClick={() => handleViewFeed(selectedSource)}
                 variant="contained" 
+                color="primary"
+                startIcon={<VisibilityIcon />}
+              >
+                Go to Feed
+              </Button>
+              <Button 
+                variant="outlined" 
                 startIcon={<OpenInNewIcon />}
                 onClick={() => window.open(`https://www.google.com/search?q=${selectedSource.name}`, '_blank')}
               >
