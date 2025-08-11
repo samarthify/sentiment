@@ -7,6 +7,7 @@ interface AuthContextType {
   session: Session | null;
   user: User | null;
   loading: boolean;
+  accessToken: string | null;
   signOut: () => Promise<void>;
 }
 
@@ -62,12 +63,15 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     setLoading(false);
   };
 
+  // Get access token from session
+  const accessToken = session?.access_token || null;
 
   // Value provided to consuming components
   const value = {
     session,
     user,
     loading,
+    accessToken,
     signOut,
   };
 

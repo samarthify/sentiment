@@ -95,9 +95,9 @@ class NewsAPICollector:
                     results = data.get("results", [])
                     logger.info(f"NewsData.io returned {len(results)} articles for {country_code} - query: {query}")
                     for article in results:
-                        # Only include articles that explicitly mention the Emir
+                        # Only include articles that explicitly mention the target individual
                         content = f"{article.get('title', '')} {article.get('description', '')}".lower()
-                        # if any(term.lower() in content for term in ["emir", "amir", "sheikh tamim", "al thani"]):
+                        # Check if the query (target individual) is mentioned in the content
                         if query.lower() in content:
                             print(f"✅ Matched article: {article.get('title')}") 
                             # Map country codes to names

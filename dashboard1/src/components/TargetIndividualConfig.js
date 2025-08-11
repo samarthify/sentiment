@@ -34,7 +34,7 @@ import { useAuth } from '../contexts/AuthContext.tsx';
 
 const TargetIndividualConfig = () => {
   const { t } = useTranslation();
-  const { session } = useAuth();
+  const { session, accessToken } = useAuth();
   const [targetConfig, setTargetConfig] = useState({
     individual_name: '',
     query_variations: []
@@ -61,7 +61,7 @@ const TargetIndividualConfig = () => {
         setIsLoading(true);
         
         // Check if user is authenticated
-        if (!session?.access_token) {
+        if (!accessToken) {
           console.error("No authentication token available");
           setError("Authentication required. Please log in to access target individual configuration.");
           setTargetConfig({ individual_name: '', query_variations: [] });
@@ -69,7 +69,7 @@ const TargetIndividualConfig = () => {
         }
         
         console.log("Attempting to load target config...");
-        const response = await DataService.getTargetIndividual(session?.access_token);
+        const response = await DataService.getTargetIndividual(accessToken);
         
         console.log("Received response from GET /target:", response);
 
@@ -104,7 +104,7 @@ const TargetIndividualConfig = () => {
     };
 
     loadTargetConfig();
-  }, [t, session?.access_token]);
+  }, [t, accessToken]);
 
   // Handle save button click
   const handleSave = async () => {
@@ -114,12 +114,12 @@ const TargetIndividualConfig = () => {
       setSuccess(null);
       
       // Check if user is authenticated
-      if (!session?.access_token) {
+      if (!accessToken) {
         setError("Authentication required. Please log in to save target individual configuration.");
         return;
       }
       
-      const response = await DataService.updateTargetIndividual(targetConfig, session?.access_token);
+      const response = await DataService.updateTargetIndividual(targetConfig, accessToken);
       
       if (response.status === 'success') {
         setSuccess(t('target.saveSuccess'));
@@ -151,7 +151,7 @@ const TargetIndividualConfig = () => {
     setTriggerSuccess(null);
     setTriggerError(null);
     try {
-      const result = await DataService.triggerAgentRun(session?.access_token);
+      const result = await DataService.triggerAgentRun(accessToken);
       setTriggerSuccess(result.message || "Agent run successfully triggered!");
     } catch (err) {
       console.error("Error triggering agent run from component:", err);

@@ -280,4 +280,126 @@ async def toggle_admin_status(
     user.is_admin = not user.is_admin
     db.commit()
     
-    return {"id": str(user.id), "email": user.email, "is_admin": user.is_admin} 
+    return {"id": str(user.id), "email": user.email, "is_admin": user.is_admin}
+
+@router.post("/add-showcase-data")
+async def add_showcase_data(
+    db: Session = Depends(get_db),
+    _: str = Depends(admin_only)
+):
+    """Add showcase data for The Nation newspaper and Arise TV channel (admin only)"""
+    try:
+        from datetime import datetime, timedelta
+        from sqlalchemy import text
+        
+        # Sample data for "The Nation" newspaper
+        nation_data = [
+            {
+                "id": str(uuid.uuid4()),
+                "source_name": "The Nation",
+                "platform": "newspaper",
+                "title": "President Tinubu Announces New Economic Reforms for 2025",
+                "text": "President Bola Tinubu unveiled comprehensive economic reforms aimed at boosting Nigeria's economic growth. The reforms include tax incentives for businesses and infrastructure development plans.",
+                "sentiment_label": "positive",
+                "sentiment_score": 0.75,
+                "date": (datetime.now() - timedelta(hours=2)).isoformat(),
+                "url": "https://thenationonlineng.net/economic-reforms-2025",
+                "source": "The Nation Online"
+            },
+            {
+                "id": str(uuid.uuid4()),
+                "source_name": "The Nation",
+                "platform": "newspaper", 
+                "title": "Senate Approves Budget for Youth Development Programs",
+                "text": "The Nigerian Senate has approved a substantial budget allocation for youth development and job creation programs across the country. This initiative is expected to benefit millions of young Nigerians.",
+                "sentiment_label": "positive",
+                "sentiment_score": 0.68,
+                "date": (datetime.now() - timedelta(hours=6)).isoformat(),
+                "url": "https://thenationonlineng.net/youth-budget-approval",
+                "source": "The Nation Online"
+            },
+            {
+                "id": str(uuid.uuid4()),
+                "source_name": "The Nation",
+                "platform": "newspaper",
+                "title": "Analysis: Nigeria's Infrastructure Development Progress",
+                "text": "A comprehensive analysis of Nigeria's infrastructure development shows steady progress in road construction, power generation, and digital connectivity. However, challenges remain in rural areas.",
+                "sentiment_label": "neutral",
+                "sentiment_score": 0.45,
+                "date": (datetime.now() - timedelta(hours=12)).isoformat(),
+                "url": "https://thenationonlineng.net/infrastructure-analysis",
+                "source": "The Nation Online"
+            }
+        ]
+        
+        # Sample data for "Arise TV" channel
+        arise_data = [
+            {
+                "id": str(uuid.uuid4()),
+                "source_name": "Arise TV",
+                "platform": "television",
+                "title": "Morning Show: President Tinubu's Economic Vision for Nigeria",
+                "text": "In today's morning show, experts discussed President Tinubu's economic vision and its potential impact on Nigeria's development. The program featured analysis from leading economists.",
+                "sentiment_label": "positive",
+                "sentiment_score": 0.72,
+                "date": (datetime.now() - timedelta(hours=3)).isoformat(),
+                "url": "https://arisemediagroup.com/morning-show",
+                "source": "Arise TV"
+            },
+            {
+                "id": str(uuid.uuid4()),
+                "source_name": "Arise TV",
+                "platform": "television",
+                "title": "News at 9: Updates on Government Policies",
+                "text": "Tonight's news program covers the latest updates on government policies, including education reforms and healthcare initiatives. The report provides balanced coverage of ongoing developments.",
+                "sentiment_label": "neutral",
+                "sentiment_score": 0.55,
+                "date": (datetime.now() - timedelta(hours=8)).isoformat(),
+                "url": "https://arisemediagroup.com/news-9pm",
+                "source": "Arise TV"
+            },
+            {
+                "id": str(uuid.uuid4()),
+                "source_name": "Arise TV",
+                "platform": "television",
+                "title": "Special Report: Nigeria's Democratic Progress",
+                "text": "A special investigative report examining Nigeria's democratic progress since the last elections. The program highlights achievements in democratic governance and areas for improvement.",
+                "sentiment_label": "positive",
+                "sentiment_score": 0.65,
+                "date": (datetime.now() - timedelta(hours=15)).isoformat(),
+                "url": "https://arisemediagroup.com/special-report",
+                "source": "Arise TV"
+            }
+        ]
+        
+        # Insert the sample data
+        all_data = nation_data + arise_data
+        
+        for item in all_data:
+            # Check if item already exists to avoid duplicates
+            existing = db.execute(
+                text("SELECT id FROM sentiment_data WHERE title = :title"),
+                {"title": item["title"]}
+            ).fetchone()
+            
+            if not existing:
+                db.execute(
+                    text("""
+                        INSERT INTO sentiment_data 
+                        (id, source_name, platform, title, text, sentiment_label, sentiment_score, date, url, source)
+                        VALUES (:id, :source_name, :platform, :title, :text, :sentiment_label, :sentiment_score, :date, :url, :source)
+                    """),
+                    item
+                )
+        
+        db.commit()
+        
+        return {
+            "status": "success", 
+            "message": f"Successfully added showcase data for The Nation and Arise TV",
+            "items_added": len(all_data)
+        }
+        
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Error adding showcase data: {str(e)}") 

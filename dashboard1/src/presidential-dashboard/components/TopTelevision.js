@@ -403,7 +403,22 @@ const TopTelevision = () => {
                   </Typography>
                   <List dense>
                     {selectedSource.recent_programs && selectedSource.recent_programs.map((program, idx) => (
-                      <ListItem key={idx} sx={{ px: 0 }}>
+                      <ListItem 
+                        key={idx} 
+                        sx={{ 
+                          px: 0,
+                          cursor: program.youtube_url ? 'pointer' : 'default',
+                          '&:hover': program.youtube_url ? {
+                            backgroundColor: 'rgba(0, 0, 0, 0.04)',
+                            borderRadius: 1
+                          } : {}
+                        }}
+                        onClick={() => {
+                          if (program.youtube_url) {
+                            window.open(program.youtube_url, '_blank');
+                          }
+                        }}
+                      >
                         <ListItemIcon>
                           <Chip
                             label={program.sentiment}
@@ -425,6 +440,18 @@ const TopTelevision = () => {
                             }
                           }}
                         />
+                        {program.youtube_url && (
+                          <IconButton 
+                            size="small"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              window.open(program.youtube_url, '_blank');
+                            }}
+                            title="Watch on YouTube"
+                          >
+                            <OpenInNewIcon fontSize="small" />
+                          </IconButton>
+                        )}
                       </ListItem>
                     ))}
                   </List>
@@ -444,7 +471,14 @@ const TopTelevision = () => {
               <Button 
                 variant="outlined" 
                 startIcon={<OpenInNewIcon />}
-                onClick={() => window.open(`https://www.google.com/search?q=${selectedSource.name}`, '_blank')}
+                onClick={() => {
+                  if (selectedSource.website_url) {
+                    window.open(selectedSource.website_url, '_blank');
+                  } else {
+                    // Fallback to Google search if no website URL is available
+                    window.open(`https://www.google.com/search?q=${selectedSource.name}`, '_blank');
+                  }
+                }}
               >
                 Visit Website
               </Button>

@@ -20,8 +20,20 @@ const StyledCard = styled(Card)(({ theme }) => ({
 
 // Helper function to format date to M/D/YYYY
 const formatDate = (dateString) => {
-  const date = new Date(dateString);
-  return `${date.getMonth() + 1}/${date.getDate()}/${date.getFullYear()}`;
+  if (!dateString) return 'Date not available';
+  
+  try {
+    const date = new Date(dateString);
+    // Check if the date is valid (not NaN and not epoch)
+    if (isNaN(date.getTime()) || date.getTime() === 0) {
+      return 'Date not available';
+    }
+    
+    return `${date.getMonth() + 1}/${date.getDate()}/${date.getFullYear()}`;
+  } catch (error) {
+    console.warn('Error formatting date:', dateString, error);
+    return 'Date not available';
+  }
 };
 
 const SentimentLineChart = ({ sentimentByDate, aggregationPeriod }) => {

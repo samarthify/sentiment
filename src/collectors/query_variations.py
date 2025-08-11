@@ -40,16 +40,17 @@ if not query_variations:
             
 # Default if nothing else worked
 if not query_variations:
-    target_individual = "Tamim ibn Hamad Al Thani"
+    target_individual = "Bola Tinubu"
     query_variations = [
         target_individual,
-        "Tamim ibn Hamad Al Thani",
-        "Tamim bin Hamad Al Thani", 
-        "Tamim bin Hamad",
-        "Sheikh Tamim",
-        "Qatar Emir",
-        "Qatar ruler",
-        "Qatar leader",
-        "Tamim Qatar",
-        "Sheikh Tamim bin Hamad"  # Common alternate spelling
+        "Bola Tinubu",
+        "President Tinubu",
+        "Nigerian President",
+        "Tinubu Nigeria",
+        "President Bola Tinubu",
+        "Nigerian leader",
+        "Nigeria president",
+        "Tinubu administration",
+        "Nigerian government",
+        "President of Nigeria"
     ]

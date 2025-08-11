@@ -93,3 +93,32 @@ html, body, #root {
   padding: 0;
   overflow-x: hidden;  /* Prevent horizontal scroll */
 }
+
+/* Ensure proper scrolling for table containers */
+.MuiTableContainer-root {
+  overflow-y: auto !important;
+  overflow-x: auto !important;
+}
+
+/* Ensure the page can scroll properly */
+body {
+  overflow-y: auto !important;
+}
+
+/* Ensure the sentiment data page has proper spacing */
+#sentiment-data-table {
+  padding-bottom: 20px;
+  min-height: auto !important;
+  height: auto !important;
+}
+
+/* Ensure the table container doesn't get cut off */
+.MuiTableContainer-root {
+  max-height: 50vh !important;
+}
+
+/* Ensure pagination is always visible */
+.MuiTablePagination-root {
+  position: relative !important;
+  z-index: 10 !important;
+}
