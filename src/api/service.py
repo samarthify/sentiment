@@ -26,6 +26,9 @@ from agent.core import SentimentAnalysisAgent
 from utils.mail_sender import MailSender
 from utils.scheduled_reports import ReportScheduler
 
+# Import presidential analysis service
+from .presidential_service import add_presidential_endpoints
+
 # Import the auth dependency
 from .auth import get_current_user_id
 
@@ -61,6 +64,9 @@ app.add_middleware(UsageTrackingMiddleware)
 
 # Include the admin router
 app.include_router(admin.router)
+
+# Add presidential analysis endpoints
+add_presidential_endpoints(app)
 
 # Initialize agent
 try:
@@ -302,6 +308,129 @@ def get_latest_run_timestamp(db: Session, user_id: Optional[str] = None) -> Opti
     
     latest_run = query.order_by(desc(models.SentimentData.run_timestamp)).first()
     return latest_run[0] if latest_run else None
+
+def deduplicate_sentiment_data(records: List[models.SentimentData]) -> List[models.SentimentData]:
+    """
+    Deduplicate sentiment data records based on content similarity.
+    Uses the same logic as the data processor to ensure consistency.
+    """
+    if not records:
+        return records
+    
+    logger.info(f"Starting deduplication of {len(records)} records")
+    
+    # Convert to list of dictionaries for easier processing
+    records_dict = []
+    for record in records:
+        # Get the main text content
+        text_content = record.text or record.content or record.title or record.description or ""
+        records_dict.append({
+            'record': record,
+            'text': text_content,
+            'normalized_text': normalize_text_for_dedup(text_content)
+        })
+    
+    # Remove exact duplicates based on normalized text
+    seen_texts = set()
+    unique_records = []
+    
+    for item in records_dict:
+        normalized_text = item['normalized_text']
+        if normalized_text not in seen_texts:
+            seen_texts.add(normalized_text)
+            unique_records.append(item['record'])
+    
+    logger.info(f"After exact deduplication: {len(unique_records)} records (removed {len(records) - len(unique_records)} duplicates)")
+    
+    # Remove similar content (simplified version for performance)
+    final_records = remove_similar_content(unique_records)
+    
+    logger.info(f"After similarity deduplication: {len(final_records)} records (removed {len(unique_records) - len(final_records)} similar records)")
+    
+    return final_records
+
+def normalize_text_for_dedup(text: str) -> str:
+    """
+    Normalize text for deduplication (same logic as data processor).
+    """
+    if not text:
+        return ""
+    
+    # Convert to lowercase
+    text = text.lower()
+    
+    # Remove extra whitespace
+    text = ' '.join(text.split())
+    
+    # Remove common punctuation that doesn't affect meaning
+    import re
+    text = re.sub(r'[^\w\s]', '', text)
+    
+    return text.strip()
+
+def remove_similar_content(records: List[models.SentimentData], similarity_threshold: float = 0.85) -> List[models.SentimentData]:
+    """
+    Remove records with similar content using a simplified approach.
+    """
+    if len(records) <= 1:
+        return records
+    
+    # Convert to list of dictionaries for processing
+    records_data = []
+    for record in records:
+        text_content = record.text or record.content or record.title or record.description or ""
+        records_data.append({
+            'record': record,
+            'text': text_content,
+            'normalized_text': normalize_text_for_dedup(text_content)
+        })
+    
+    # Simple similarity check based on text length and content overlap
+    indices_to_keep = []
+    
+    for i, item1 in enumerate(records_data):
+        keep_record = True
+        
+        for j in range(i + 1, len(records_data)):
+            item2 = records_data[j]
+            
+            # Skip if we already decided to drop this record
+            if j in indices_to_keep:
+                continue
+            
+            # Quick length check
+            len1, len2 = len(item1['normalized_text']), len(item2['normalized_text'])
+            if len1 == 0 or len2 == 0:
+                continue
+            
+            # Calculate similarity based on common words
+            words1 = set(item1['normalized_text'].split())
+            words2 = set(item2['normalized_text'].split())
+            
+            if len(words1) == 0 or len(words2) == 0:
+                continue
+            
+            intersection = len(words1.intersection(words2))
+            union = len(words1.union(words2))
+            
+            if union > 0:
+                similarity = intersection / union
+                
+                # If similarity is high, keep the longer/more detailed record
+                if similarity > similarity_threshold:
+                    if len(item1['text']) < len(item2['text']):
+                        keep_record = False
+                        break
+                    else:
+                        # Mark the other record to be dropped
+                        indices_to_keep.append(j)
+        
+        if keep_record:
+            indices_to_keep.append(i)
+    
+    # Return only the records we decided to keep
+    return [records_data[i]['record'] for i in indices_to_keep if i < len(records_data)]
+
 @app.get("/latest-data")
 async def get_latest_data(db: Session = Depends(get_db)):
     """Get all processed data with AI justification that mentions target individual and excludes negative sentiment - PUBLIC ACCESS"""
@@ -370,13 +499,17 @@ async def get_latest_data(db: Session = Depends(get_db)):
             target_name = target_config.individual_name if target_config else "target individual"
             return {"status": "error", "message": f"No data with AI justification mentioning {target_name} available."}
         
-        data_list = [row.to_dict() for row in results]
+        # Apply deduplication to remove duplicate content
+        deduplicated_results = deduplicate_sentiment_data(results)
+        logger.info(f"After deduplication: {len(deduplicated_results)} unique records")
+        
+        data_list = [row.to_dict() for row in deduplicated_results]
 
         return {
             "status": "success",
             "data": data_list, 
             "record_count": len(data_list),
-            "note": f"Public access to data with AI justification mentioning {target_config.individual_name if target_config else 'target individual'} (all sentiment types included)"
+            "note": f"Public access to data with AI justification mentioning {target_config.individual_name if target_config else 'target individual'} (all sentiment types included, deduplicated)"
         }
     except Exception as e:
         logger.error(f"Error fetching data from DB: {str(e)}", exc_info=True)
