@@ -18,7 +18,7 @@ export const WebSocketProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   const [isConnected, setIsConnected] = useState(false);
 
   useEffect(() => {
-    const wsUrl = (process.env.REACT_APP_API_URL || 'ws://localhost:8000').replace(/^http/, 'ws');
+    const wsUrl = (process.env.REACT_APP_API_URL || 'ws://13.202.48.110:8000').replace(/^http/, 'ws');
     const ws = new WebSocket(`${wsUrl}/ws`);
 
     ws.onopen = () => {

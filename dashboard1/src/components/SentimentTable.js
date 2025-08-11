@@ -248,14 +248,25 @@ const SentimentTable = ({ data, title = "Sentiment Analysis", type = 'top' }) =>
 
   const formatDate = (dateString) => {
     if (!dateString) return t('sentimentTable.notAvailable');
-    const date = new Date(dateString);
-    return date.toLocaleDateString('en-US', {
-      year: 'numeric',
-      month: 'long',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit'
-    });
+    
+    try {
+      const date = new Date(dateString);
+      // Check if the date is valid (not NaN and not epoch)
+      if (isNaN(date.getTime()) || date.getTime() === 0) {
+        return t('sentimentTable.notAvailable');
+      }
+      
+      return date.toLocaleDateString('en-US', {
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit'
+      });
+    } catch (error) {
+      console.warn('Error formatting date:', dateString, error);
+      return t('sentimentTable.notAvailable');
+    }
   };
 
   const DetailRow = ({ icon, label, value, isLink }) => (

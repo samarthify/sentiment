@@ -79,9 +79,6 @@ const SentimentDataPage = ({ data }) => {
       }} />
       
       <Container maxWidth="xl" sx={{ 
-        height: '100%',
-        display: 'flex',
-        flexDirection: 'column',
         position: 'relative',
         zIndex: 1
       }}>
@@ -138,33 +135,23 @@ const SentimentDataPage = ({ data }) => {
           )}
         </Box>
         
-        {/* Table Section - Fill remaining space */}
+        {/* Table Section */}
         <Box 
           id="sentiment-data-table" 
           sx={{ 
-            flex: 1,
-            display: 'flex',
-            flexDirection: 'column',
-            minHeight: 0, // Important for flex child
+            mb: 4,
             px: 0
           }}
         >
-          <Box sx={{
-            flex: 1,
-            background: 'transparent',
-            display: 'flex',
-            flexDirection: 'column'
-          }}>
-            <SentimentDataTable 
-              data={data}
-              initialSentimentFilter={sentimentFilter}
-              initialSourceFilter={sourceFilter}
-              initialDateFilter={dateFilter}
-              initialCountryFilter={countryFilter}
-              initialTextFilter={textFilter}
-              initialSearchTerm={searchTerm}
-            />
-          </Box>
+          <SentimentDataTable 
+            data={data}
+            initialSentimentFilter={sentimentFilter}
+            initialSourceFilter={sourceFilter}
+            initialDateFilter={dateFilter}
+            initialCountryFilter={countryFilter}
+            initialTextFilter={textFilter}
+            initialSearchTerm={searchTerm}
+          />
         </Box>
       </Container>
     </Box>

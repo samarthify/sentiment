@@ -350,7 +350,7 @@ class DataService {
   categorizeSource(platform) {
     const socialMediaKeywords = ['twitter', 'facebook', 'instagram', 'linkedin', 'tiktok', 'reddit', 'social'];
     const newsKeywords = ['news', 'times', 'post', 'guardian', 'reuters', 'associated press', 'ap', 'afp', 'newspaper'];
-    const tvKeywords = ['tv', 'television', 'broadcast', 'cnn', 'bbc', 'fox', 'msnbc', 'aljazeera', 'al jazeera', 'channel'];
+    const tvKeywords = ['tv', 'television', 'broadcast', 'cnn', 'bbc', 'fox', 'msnbc', 'aljazeera', 'al jazeera', 'channel', 'ait live', 'ait', 'nta', 'stv', 'plus tv', 'plus tv africa', 'news central', 'flip tv', 'trust tv', 'voice tv', 'silverbird tv', 'silverbird'];
     
     if (socialMediaKeywords.some(keyword => platform.includes(keyword))) {
       return 'Social Media';
@@ -439,7 +439,9 @@ class DataService {
           'guardian.ng', 'channels tv', 'tribune', 'leadership.ng',
           'premium times', 'the sun', 'business day', 'daily post',
           'legit.ng', 'sahara reporters', 'nairametrics', 'blueprint',
-          'the cable', 'independent.ng', 'nannews'
+          'the cable', 'independent.ng', 'nannews',
+          'ait live', 'ait', 'nta', 'stv', 'plus tv', 'plus tv africa', 'news central',
+          'flip tv', 'trust tv', 'voice tv', 'silverbird tv', 'silverbird'
         ].some(s => source.includes(s) || platform.includes(s))) {
           item.country = 'Nigeria';
         }

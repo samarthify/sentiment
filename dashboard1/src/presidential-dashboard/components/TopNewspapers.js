@@ -364,7 +364,14 @@ const TopNewspapers = () => {
               <Button 
                 variant="contained" 
                 startIcon={<OpenInNewIcon />}
-                onClick={() => window.open(`https://www.google.com/search?q=${selectedSource.name}`, '_blank')}
+                onClick={() => {
+                  if (selectedSource.website_url) {
+                    window.open(selectedSource.website_url, '_blank');
+                  } else {
+                    // Fallback to Google search if no website URL is available
+                    window.open(`https://www.google.com/search?q=${selectedSource.name}`, '_blank');
+                  }
+                }}
               >
                 Visit Website
               </Button>

@@ -227,7 +227,16 @@ const TopTwitter = () => {
                       >
                         <VisibilityIcon />
                       </IconButton>
-                      <IconButton size="small">
+                      <IconButton 
+                        size="small"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (account.profile_url) {
+                            window.open(account.profile_url, '_blank');
+                          }
+                        }}
+                        title="Visit Profile"
+                      >
                         <OpenInNewIcon />
                       </IconButton>
                     </Box>
@@ -395,6 +404,15 @@ const TopTwitter = () => {
               >
                 View Tweets
               </Button>
+              {selectedSource.profile_url && (
+                <Button 
+                  variant="outlined" 
+                  startIcon={<OpenInNewIcon />}
+                  onClick={() => window.open(selectedSource.profile_url, '_blank')}
+                >
+                  Visit Profile
+                </Button>
+              )}
             </DialogActions>
           </>
         )}

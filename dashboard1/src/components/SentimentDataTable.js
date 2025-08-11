@@ -437,9 +437,34 @@ const SentimentDataTable = ({ data: rawData, initialSentimentFilter = null, init
       }}>
         <TableContainer sx={{ 
           flex: 1,
-          maxHeight: 'none',
+          maxHeight: '50vh',
+          minHeight: '300px',
+          overflow: 'auto',
           background: 'linear-gradient(135deg, rgba(255,255,255,0.8) 0%, rgba(255,255,255,0.6) 100%)',
-          backdropFilter: 'blur(10px)'
+          backdropFilter: 'blur(10px)',
+          '&::-webkit-scrollbar': {
+            width: '8px',
+            height: '8px',
+          },
+          '&::-webkit-scrollbar-track': {
+            background: 'rgba(99, 102, 241, 0.1)',
+            borderRadius: '4px',
+          },
+          '&::-webkit-scrollbar-thumb': {
+            background: 'rgba(99, 102, 241, 0.3)',
+            borderRadius: '4px',
+            '&:hover': {
+              background: 'rgba(99, 102, 241, 0.5)',
+            },
+          },
+          '@media (max-width: 600px)': {
+            maxHeight: '40vh',
+            minHeight: '250px',
+            overflowX: 'auto',
+            '& .MuiTable-root': {
+              minWidth: '800px',
+            }
+          }
         }}>
           <Table stickyHeader aria-label="sentiment data table">
             <TableHead>

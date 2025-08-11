@@ -358,11 +358,26 @@ const PolicyImpactTracker = ({ data, loading }) => {
   };
 
   const formatDate = (dateString) => {
-    return new Date(dateString).toLocaleDateString('en-US', {
-      year: 'numeric',
-      month: 'short',
-      day: 'numeric'
-    });
+    if (!dateString) {
+      return 'Date not available';
+    }
+    
+    try {
+      const date = new Date(dateString);
+      // Check if the date is valid (not NaN and not epoch)
+      if (isNaN(date.getTime()) || date.getTime() === 0) {
+        return 'Date not available';
+      }
+      
+      return date.toLocaleDateString('en-US', {
+        year: 'numeric',
+        month: 'short',
+        day: 'numeric'
+      });
+    } catch (error) {
+      console.warn('Error formatting date:', dateString, error);
+      return 'Date not available';
+    }
   };
 
   const calculateRecoveryProgress = (policy) => {
