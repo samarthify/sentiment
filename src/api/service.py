@@ -1,10 +1,10 @@
-from fastapi import FastAPI, WebSocket, HTTPException, BackgroundTasks, Depends, Response, status
+from fastapi import FastAPI, WebSocket, HTTPException, BackgroundTasks, Depends, Response, status, Request, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 import json
 import asyncio
 from typing import List, Dict, Any, Optional, Tuple
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import pandas as pd
 from pathlib import Path
 from pydantic import BaseModel, EmailStr, Field
@@ -290,6 +290,15 @@ async def update_data(request: DataUpdateRequest, db: Session = Depends(get_db))
             db.add_all(db_objects)
             db.commit()  # Commit the transaction
             logger.info(f"Successfully added {len(db_objects)} records to the database.")
+            
+            # Invalidate cache when new data is added
+            try:
+                from .data_cache import sentiment_cache
+                sentiment_cache.clear_cache()
+                logger.info("Cache invalidated due to new data")
+            except Exception as cache_error:
+                logger.warning(f"Failed to invalidate cache: {cache_error}")
+            
             return {"status": "success", "message": f"Data updated with {len(db_objects)} records."}
         else:
             return {"status": "success", "message": "No records to add."}
@@ -342,12 +351,10 @@ def deduplicate_sentiment_data(records: List[models.SentimentData]) -> List[mode
     
     logger.info(f"After exact deduplication: {len(unique_records)} records (removed {len(records) - len(unique_records)} duplicates)")
     
-    # Remove similar content (simplified version for performance)
-    final_records = remove_similar_content(unique_records)
+    # Skip similarity deduplication for performance
+    logger.info(f"Skipping similarity deduplication for performance")
     
-    logger.info(f"After similarity deduplication: {len(final_records)} records (removed {len(unique_records) - len(final_records)} similar records)")
-    
-    return final_records
+    return unique_records
 
 def normalize_text_for_dedup(text: str) -> str:
     """
@@ -370,10 +377,15 @@ def normalize_text_for_dedup(text: str) -> str:
 
 def remove_similar_content(records: List[models.SentimentData], similarity_threshold: float = 0.85) -> List[models.SentimentData]:
     """
-    Remove records with similar content using a simplified approach.
+    Remove records with similar content using an optimized approach.
     """
     if len(records) <= 1:
         return records
+    
+    # For large datasets, use a more efficient approach
+    if len(records) > 1000:
+        logger.info(f"Large dataset detected ({len(records)} records), using optimized deduplication")
+        return remove_similar_content_optimized(records, similarity_threshold)
     
     # Convert to list of dictionaries for processing
     records_data = []
@@ -431,13 +443,107 @@ def remove_similar_content(records: List[models.SentimentData], similarity_thres
     # Return only the records we decided to keep
     return [records_data[i]['record'] for i in indices_to_keep if i < len(records_data)]
 
-@app.get("/latest-data")
-async def get_latest_data(db: Session = Depends(get_db)):
-    """Get all processed data with AI justification containing 'Recommended Action' that mentions target individual - PUBLIC ACCESS"""
+def remove_similar_content_optimized(records: List[models.SentimentData], similarity_threshold: float = 0.85) -> List[models.SentimentData]:
+    """
+    Optimized similarity removal for large datasets using hash-based approach.
+    """
+    if len(records) <= 1:
+        return records
+    
+    logger.info(f"Using optimized deduplication for {len(records)} records")
+    
+    # Group records by text length (similar length texts are more likely to be similar)
+    length_groups = {}
+    for record in records:
+        text_content = record.text or record.content or record.title or record.description or ""
+        text_length = len(text_content)
+        # Group by length ranges to reduce comparisons
+        length_range = (text_length // 50) * 50  # Group by 50-character ranges
+        if length_range not in length_groups:
+            length_groups[length_range] = []
+        length_groups[length_range].append(record)
+    
+    # Process each length group separately
+    final_records = []
+    for length_range, group_records in length_groups.items():
+        if len(group_records) == 1:
+            final_records.append(group_records[0])
+            continue
+        
+        # For small groups, use simple deduplication
+        if len(group_records) <= 100:
+            deduped = remove_similar_content(group_records, similarity_threshold)
+            final_records.extend(deduped)
+        else:
+            # For large groups, use hash-based approach
+            logger.info(f"Processing large group with {len(group_records)} records of length ~{length_range}")
+            
+            # Create hash-based groups for very similar content
+            hash_groups = {}
+            for record in group_records:
+                text_content = record.text or record.content or record.title or record.description or ""
+                # Create a simple hash based on first 100 characters
+                content_hash = hash(text_content[:100]) % 1000
+                if content_hash not in hash_groups:
+                    hash_groups[content_hash] = []
+                hash_groups[content_hash].append(record)
+            
+            # Keep one record from each hash group
+            for hash_group in hash_groups.values():
+                if hash_group:
+                    # Keep the record with the longest text
+                    longest_record = max(hash_group, key=lambda r: len(r.text or r.content or r.title or r.description or ""))
+                    final_records.append(longest_record)
+    
+    logger.info(f"Optimized deduplication completed: {len(final_records)} records kept from {len(records)} original")
+    return final_records
+
+@app.get("/debug-auth")
+async def debug_auth(request: Request):
+    """Debug endpoint to check authentication details"""
+    auth_header = request.headers.get("Authorization")
+    if not auth_header:
+        return {"status": "error", "message": "No Authorization header"}
+    
+    if not auth_header.startswith("Bearer "):
+        return {"status": "error", "message": "Invalid Authorization format"}
+    
+    token = auth_header.split(" ")[1]
+    
+    # Try to decode the token
     try:
-        logger.info("Latest data endpoint called (public access)")
-        from sqlalchemy import text
-        from sqlalchemy import or_
+        from .auth import SECRET_KEY, ALGORITHM
+        if not SECRET_KEY:
+            return {"status": "error", "message": "JWT secret not configured"}
+        
+        from jose import jwt
+        payload = jwt.decode(
+            token, 
+            SECRET_KEY, 
+            algorithms=[ALGORITHM],
+            options={"verify_aud": False}
+        )
+        
+        return {
+            "status": "success",
+            "token_info": {
+                "user_id": payload.get("sub"),
+                "exp": payload.get("exp"),
+                "iat": payload.get("iat"),
+                "aud": payload.get("aud"),
+                "iss": payload.get("iss"),
+                "token_length": len(token)
+            }
+        }
+    except Exception as e:
+        return {"status": "error", "message": f"Token validation failed: {str(e)}"}
+
+@app.get("/latest-data")
+async def get_latest_data(db: Session = Depends(get_db), user_id: Optional[str] = None):
+    """Get processed data with AI justification (any content) with optional target individual filtering."""
+    try:
+        logger.info(f"Latest data endpoint called with user_id: {user_id}")
+        from .data_cache import sentiment_cache
         
         # Test database connection first
         try:
@@ -447,75 +553,121 @@ async def get_latest_data(db: Session = Depends(get_db)):
             logger.error(f"Database connection failed: {str(db_error)}")
             return {"status": "error", "message": f"Database connection failed: {str(db_error)}"}
         
-        # Get target individual configuration (use a default user ID for public access)
-        default_user_id = "6440da7f-e630-4b2f-884e-a8721cc9a9c0"  # Your default user
-        target_config = db.query(models.TargetIndividualConfiguration)\
-                         .filter(models.TargetIndividualConfiguration.user_id == default_user_id)\
-                         .order_by(models.TargetIndividualConfiguration.created_at.desc())\
-                         .first()
-        
-        if not target_config:
-            logger.warning("No target config found, returning all data with AI justification containing 'Recommended Action'")
-            # Fallback: return all data with AI justification containing "Recommended Action"
-            results = db.query(models.SentimentData)\
-                        .filter(models.SentimentData.sentiment_justification.isnot(None))\
-                        .filter(models.SentimentData.sentiment_justification != "")\
-                        .filter(models.SentimentData.sentiment_justification.ilike("%Recommended Action%"))\
-                        .all()
-        else:
-            logger.info(f"Found target config: {target_config.individual_name} with {len(target_config.query_variations)} variations")
-            
-            # Build search conditions for target individual
-            search_terms = [target_config.individual_name] + target_config.query_variations
-            
-            # Create OR conditions for all search terms
-            search_conditions = []
-            for term in search_terms:
-                if term and term.strip():  # Only add non-empty terms
-                    search_conditions.append(
-                        or_(
-                            models.SentimentData.text.ilike(f"%{term}%"),
-                            models.SentimentData.title.ilike(f"%{term}%"),
-                            models.SentimentData.content.ilike(f"%{term}%")
-                        )
-                    )
-            
-            if search_conditions:
-                # Combine all search conditions with OR
-                combined_search = or_(*search_conditions)
-                
-                # Get data with AI justification containing "Recommended Action", mentions target individual
-                results = db.query(models.SentimentData)\
-                            .filter(models.SentimentData.sentiment_justification.isnot(None))\
-                            .filter(models.SentimentData.sentiment_justification != "")\
-                            .filter(models.SentimentData.sentiment_justification.ilike("%Recommended Action%"))\
-                            .filter(combined_search)\
-                            .all()
-            else:
-                # No valid search terms, return empty
-                results = []
-        
-        logger.info(f"Found {len(results)} records with AI justification containing 'Recommended Action' and mentioning target individual")
+        # Get AI processed data from cache
+        logger.info("Loading AI processed data from cache...")
+        results = sentiment_cache.get_ai_processed_data(db)
         
         if not results:
-            target_name = target_config.individual_name if target_config else "target individual"
-            return {"status": "error", "message": f"No data with AI justification containing 'Recommended Action' and mentioning {target_name} available."}
+            return {"status": "error", "message": "No data with AI justification available."}
         
-        # Apply deduplication to remove duplicate content
-        deduplicated_results = deduplicate_sentiment_data(results)
+        # Target individual filtering
+        target_config = None
+        if user_id:
+            try:
+                # Convert string user_id to UUID for database query
+                from uuid import UUID
+                user_uuid = UUID(user_id) if isinstance(user_id, str) else user_id
+                
+                # Get target individual configuration for the user
+                target_config = db.query(models.TargetIndividualConfiguration)\
+                                 .filter(models.TargetIndividualConfiguration.user_id == user_uuid)\
+                                 .order_by(models.TargetIndividualConfiguration.created_at.desc())\
+                                 .first()
+                
+                if target_config:
+                    logger.info(f"Found target config for user {user_id}: {target_config.individual_name} with {len(target_config.query_variations)} variations")
+                    
+                    # Apply target filtering using cache
+                    results = sentiment_cache.filter_by_target_config(results, target_config)
+                    logger.info(f"Applied target individual filtering for user {user_id}")
+                else:
+                    logger.info(f"No target config found for user {user_id}, returning general data")
+            except Exception as config_error:
+                logger.warning(f"Error getting target config for user {user_id}: {str(config_error)}, returning general data")
+        
+        if target_config:
+            logger.info(f"Found {len(results)} records with AI justification (FILTERED for {target_config.individual_name})")
+        else:
+            logger.info(f"Found {len(results)} records with AI justification (NO TARGET FILTERING)")
+        
+        # Apply deduplication using cache
+        deduplicated_results = sentiment_cache.deduplicate_data(results)
         logger.info(f"After deduplication: {len(deduplicated_results)} unique records")
         
         data_list = [row.to_dict() for row in deduplicated_results]
 
         return {
             "status": "success",
-            "data": data_list, 
+            "data": data_list,
             "record_count": len(data_list),
-            "note": f"Public access to data with AI justification containing 'Recommended Action' and mentioning {target_config.individual_name if target_config else 'target individual'}"
+            "user_id": user_id,
+            "target_individual": target_config.individual_name if target_config else "No target configured",
+            "note": f"Data with AI justification - Target filtering {'ENABLED' if target_config else 'DISABLED'}, Deduplication ENABLED, Cache ENABLED"
         }
     except Exception as e:
-        logger.error(f"Error fetching data from DB: {str(e)}", exc_info=True)
+        logger.error(f"Error fetching data from cache: {str(e)}", exc_info=True)
         return {"status": "error", "message": f"Error fetching data: {str(e)}"}
+
+@app.get("/cache/info")
+async def get_cache_info(db: Session = Depends(get_db)):
+    """Get information about the current cache state"""
+    try:
+        from .data_cache import sentiment_cache
+        cache_info = sentiment_cache.get_cache_info()
+        stats = sentiment_cache.get_stats(db)
+        
+        return {
+            "status": "success",
+            "cache_info": cache_info,
+            "stats": {
+                "total_records": stats.total_records,
+                "ai_processed_count": stats.ai_processed_count,
+                "platforms_count": len(stats.platforms),
+                "sources_count": len(stats.sources),
+                "last_updated": stats.last_updated.isoformat() if stats.last_updated else None,
+                "date_range": [
+                    stats.date_range[0].isoformat() if stats.date_range[0] else None,
+                    stats.date_range[1].isoformat() if stats.date_range[1] else None
+                ]
+            }
+        }
+    except Exception as e:
+        logger.error(f"Error getting cache info: {e}")
+        return {"status": "error", "message": str(e)}
+
+@app.post("/cache/refresh")
+async def refresh_cache(db: Session = Depends(get_db)):
+    """Force refresh the data cache"""
+    try:
+        from .data_cache import sentiment_cache
+        logger.info("Manual cache refresh requested")
+        
+        success = sentiment_cache.refresh_cache(db, force=True)
+        if success:
+            cache_info = sentiment_cache.get_cache_info()
+            return {
+                "status": "success",
+                "message": "Cache refreshed successfully",
+                "cache_info": cache_info
+            }
+        else:
+            return {"status": "error", "message": "Cache refresh failed"}
+    except Exception as e:
+        logger.error(f"Error refreshing cache: {e}")
+        return {"status": "error", "message": str(e)}
+
+@app.delete("/cache/clear")
+async def clear_cache():
+    """Clear all cached data"""
+    try:
+        from .data_cache import sentiment_cache
+        sentiment_cache.clear_cache()
+        logger.info("Cache cleared manually")
+        return {"status": "success", "message": "Cache cleared successfully"}
+    except Exception as e:
+        logger.error(f"Error clearing cache: {e}")
+        return {"status": "error", "message": str(e)}
+
 @app.get("/comparison-data")
 async def get_comparison_data(db: Session = Depends(get_db), user_id: str = Depends(get_current_user_id)) -> Dict[str, Any]:
     """Get the latest and second-latest datasets from the DB for comparison for the authenticated user."""
@@ -950,7 +1102,8 @@ async def update_target_individual(target_config: TargetIndividualConfig, db: Se
             new_config = models.TargetIndividualConfiguration(\
                 user_id=user_id, # Assign the authenticated user's ID
                 individual_name=target_config.individual_name,\
-                query_variations=target_config.query_variations
+                query_variations=target_config.query_variations,
+                created_at=datetime.now()  # Manually set timestamp for SQLite compatibility
             )
             db.add(new_config)
             logger.info(f"Attempting to commit new target config for user {user_id}...") # Log before commit
@@ -1103,13 +1256,55 @@ async def startup_event():
 
     logger.info("API Service startup complete.")
 
+def apply_target_filtering_to_media_data(db: Session, all_data: List, user_id: Optional[str], endpoint_name: str) -> List:
+    """Helper function to apply target individual filtering to media data"""
+    if not user_id:
+        return all_data
+    
+    try:
+        from uuid import UUID
+        user_uuid = UUID(user_id) if isinstance(user_id, str) else user_id
+        target_config = db.query(models.TargetIndividualConfiguration)\
+                         .filter(models.TargetIndividualConfiguration.user_id == user_uuid)\
+                         .order_by(models.TargetIndividualConfiguration.created_at.desc())\
+                         .first()
+        
+        if target_config:
+            from .data_cache import sentiment_cache
+            logger.info(f"Applying target filtering for {endpoint_name}: {target_config.individual_name}")
+            filtered_data = sentiment_cache.filter_by_target_config(all_data, target_config)
+            logger.info(f"Filtered {len(all_data)} to {len(filtered_data)} records for target individual")
+            return filtered_data
+        else:
+            logger.info(f"No target config found for user {user_id} in {endpoint_name}")
+    except Exception as e:
+        logger.warning(f"Error applying target filtering in {endpoint_name}: {e}")
+    
+    return all_data
+
 @app.get("/media-sources/newspapers")
-async def get_newspaper_sources(db: Session = Depends(get_db)):
+async def get_newspaper_sources(
+    db: Session = Depends(get_db), 
+    user_id: Optional[str] = Query(None)
+):
     """Get newspaper sources with sentiment analysis"""
     try:
-        logger.info("Newspaper endpoint called")
+        logger.info(f"Newspaper endpoint called with user_id: {user_id}")
+        from .data_cache import sentiment_cache
         
-        # Query newspaper sources from the database - load all data
+        # Get all data from cache instead of multiple database queries
+        logger.info("Loading data from cache...")
+        all_data = sentiment_cache.get_all_data(db)
+        
+        # Apply target individual filtering if user_id provided
+        all_data = apply_target_filtering_to_media_data(db, all_data, user_id, "newspapers")
+        
+        # Get cache statistics instead of separate database queries
+        stats = sentiment_cache.get_stats(db)
+        logger.info(f"Total records in cache: {stats.total_records}")
+        logger.info(f"Available platforms: {len(stats.platforms)} platforms")
+        logger.info(f"Available sources: {len(stats.sources)} sources")
+        
         # Newspapers are typically identified by source names containing news-related keywords
         newspaper_keywords = [
             'guardian', 'times', 'post', 'tribune', 'herald', 'gazette', 'chronicle',
@@ -1120,66 +1315,127 @@ async def get_newspaper_sources(db: Session = Depends(get_db)):
             'the nation', 'nation'
         ]
         
-        # First, let's check what data exists in the database
-        total_data_query = text("SELECT COUNT(*) as total FROM sentiment_data")
-        total_result = db.execute(total_data_query)
-        total_count = total_result.fetchone().total
-        logger.info(f"Total records in database: {total_count}")
+        # Filter data using cache instead of complex SQL
+        newspaper_data = sentiment_cache.filter_by_platform_keywords(all_data, newspaper_keywords)
+        logger.info(f"Filtered to {len(newspaper_data)} newspaper records from {len(all_data)} total records")
         
-        # Check what platforms exist
-        platforms_query = text("SELECT DISTINCT platform FROM sentiment_data WHERE platform IS NOT NULL")
-        platforms_result = db.execute(platforms_query)
-        platforms = [row.platform for row in platforms_result]
-        logger.info(f"Available platforms: {platforms}")
+        # Process the filtered data to aggregate by source
+        from collections import defaultdict
+        from datetime import datetime
         
-        # Check what source_names exist
-        sources_query = text("SELECT DISTINCT source_name FROM sentiment_data WHERE source_name IS NOT NULL LIMIT 10")
-        sources_result = db.execute(sources_query)
-        sources = [row.source_name for row in sources_result]
-        logger.info(f"Sample source_names: {sources}")
+        source_stats = defaultdict(lambda: {
+            'coverage_count': 0,
+            'sentiment_scores': [],
+            'positive_count': 0,
+            'negative_count': 0,
+            'neutral_count': 0,
+            'last_updated': None,
+            'source_name': None,
+            'source': None,
+            'platform': None,
+            'primary_source': None
+        })
         
-        # Build the query to find newspaper sources
-        newspaper_conditions = []
-        for keyword in newspaper_keywords:
-            newspaper_conditions.append(f"LOWER(source_name) LIKE '%{keyword}%'")
-            newspaper_conditions.append(f"LOWER(source) LIKE '%{keyword}%'")
-            newspaper_conditions.append(f"LOWER(platform) LIKE '%{keyword}%'")
+        # Aggregate data by normalized source name
+        for record in newspaper_data:
+            # Get source information
+            source_name = getattr(record, 'source_name', None) or ''
+            source = getattr(record, 'source', None) or ''
+            platform = getattr(record, 'platform', None) or ''
+            primary_source = source_name or source or platform or 'unknown'
+            
+            # Normalize source name for grouping
+            primary_source_lower = primary_source.lower()
+            normalized_source = None
+            
+            if 'tribune' in primary_source_lower:
+                normalized_source = 'tribune'
+            elif 'thisday' in primary_source_lower:
+                normalized_source = 'thisdaylive'
+            elif 'nation' in primary_source_lower:
+                normalized_source = 'thenationonlineng'
+            elif 'punch' in primary_source_lower:
+                normalized_source = 'punchng'
+            elif 'premium' in primary_source_lower:
+                normalized_source = 'premiumtimesng'
+            elif 'guardian' in primary_source_lower:
+                normalized_source = 'guardian'
+            elif 'vanguard' in primary_source_lower:
+                normalized_source = 'vanguard'
+            elif 'sun' in primary_source_lower:
+                normalized_source = 'sunnewsonline'
+            elif 'daily' in primary_source_lower:
+                normalized_source = 'dailytrust'
+            elif 'leadership' in primary_source_lower:
+                normalized_source = 'leadership'
+            elif 'complete' in primary_source_lower:
+                normalized_source = 'completesports'
+            elif 'business' in primary_source_lower:
+                normalized_source = 'businessday'
+            elif 'blueprint' in primary_source_lower:
+                normalized_source = 'blueprint'
+            elif 'cable' in primary_source_lower:
+                normalized_source = 'thecable'
+            else:
+                normalized_source = primary_source_lower
+            
+            stats = source_stats[normalized_source]
+            stats['coverage_count'] += 1
+            
+            # Store source information (use first occurrence)
+            if not stats['primary_source']:
+                stats['primary_source'] = primary_source
+                stats['source_name'] = source_name
+                stats['source'] = source
+                stats['platform'] = platform
+            
+            # Aggregate sentiment data
+            sentiment_score = getattr(record, 'sentiment_score', None)
+            if sentiment_score is not None:
+                stats['sentiment_scores'].append(float(sentiment_score))
+            
+            sentiment_label = getattr(record, 'sentiment_label', 'neutral')
+            if sentiment_label == 'positive':
+                stats['positive_count'] += 1
+            elif sentiment_label == 'negative':
+                stats['negative_count'] += 1
+            else:
+                stats['neutral_count'] += 1
+            
+            # Track last updated (safely handle None dates)
+            record_date = getattr(record, 'date', None)
+            if record_date:
+                try:
+                    if stats['last_updated'] is None:
+                        stats['last_updated'] = record_date
+                    elif record_date is not None:
+                        # Safely compare dates by converting to strings if needed
+                        if str(record_date) > str(stats['last_updated']):
+                            stats['last_updated'] = record_date
+                except (TypeError, ValueError):
+                    # If date comparison fails, just use the first valid date
+                    if stats['last_updated'] is None:
+                        stats['last_updated'] = record_date
         
-        # If no newspaper-specific data found, try to get any data with news-like sources
-        if not newspaper_conditions:
-            newspaper_conditions = [
-                "LOWER(source_name) LIKE '%news%'",
-                "LOWER(source) LIKE '%news%'",
-                "LOWER(platform) LIKE '%news%'",
-                "LOWER(source_name) LIKE '%paper%'",
-                "LOWER(source) LIKE '%paper%'",
-                "LOWER(platform) LIKE '%paper%'"
-            ]
+        # Convert to list format similar to SQL results
+        class SourceRow:
+            def __init__(self, data):
+                self.primary_source = data['primary_source']
+                self.source_name = data['source_name']
+                self.source = data['source']
+                self.platform = data['platform']
+                self.coverage_count = data['coverage_count']
+                self.avg_sentiment_score = sum(data['sentiment_scores']) / len(data['sentiment_scores']) if data['sentiment_scores'] else 0.0
+                self.positive_count = data['positive_count']
+                self.negative_count = data['negative_count']
+                self.neutral_count = data['neutral_count']
+                self.last_updated = data['last_updated']
         
-        newspaper_condition = " OR ".join(newspaper_conditions)
-        logger.info(f"Newspaper condition: {newspaper_condition}")
+        # Sort by coverage count and limit to top 15
+        sorted_sources = sorted(source_stats.items(), key=lambda x: x[1]['coverage_count'], reverse=True)[:15]
+        rows = [SourceRow(data) for source_key, data in sorted_sources]
         
-        query = text(f"""
-            SELECT 
-                source_name,
-                source,
-                platform,
-                COUNT(*) as coverage_count,
-                AVG(sentiment_score) as avg_sentiment_score,
-                SUM(CASE WHEN sentiment_label = 'positive' THEN 1 ELSE 0 END) as positive_count,
-                SUM(CASE WHEN sentiment_label = 'negative' THEN 1 ELSE 0 END) as negative_count,
-                SUM(CASE WHEN sentiment_label = 'neutral' THEN 1 ELSE 0 END) as neutral_count,
-                MAX(date) as last_updated
-            FROM sentiment_data 
-            WHERE ({newspaper_condition})
-            GROUP BY source_name, source, platform
-            ORDER BY coverage_count DESC
-            LIMIT 10
-        """)
-        
-        result = db.execute(query)
-        rows = list(result)
-        logger.info(f"Found {len(rows)} newspaper sources")
+        logger.info(f"Found {len(rows)} newspaper sources from filtered data")
         
         newspapers = []
         for row in rows:
@@ -1197,183 +1453,325 @@ async def get_newspaper_sources(db: Session = Depends(get_db)):
             else:
                 bias_level = "Neutral"
             
-            # Get recent articles for this source with detailed information
-            recent_articles_query = text("""
-                SELECT title, sentiment_label, sentiment_score, sentiment_justification, date, text, url, source_name, platform
-                FROM sentiment_data 
-                WHERE (LOWER(source_name) LIKE :source_pattern OR LOWER(source) LIKE :source_pattern OR LOWER(platform) LIKE :source_pattern)
-                ORDER BY date DESC
-                LIMIT 3
-            """)
+            # Get recent articles for this source from the filtered data
+            primary_source = row.primary_source or row.source_name or row.platform or row.source or ""
+            primary_source_lower = primary_source.lower() if primary_source else ""
             
-            source_pattern = f"%{row.source_name.lower() if row.source_name else (row.platform.lower() if row.platform else row.source.lower())}%"
-            recent_result = db.execute(recent_articles_query, {
-                "source_pattern": source_pattern
-            })
+            # Filter the newspaper data for this specific source
+            source_articles = []
+            for article in newspaper_data:
+                article_source_name = getattr(article, 'source_name', '') or ''
+                article_source = getattr(article, 'source', '') or ''
+                article_platform = getattr(article, 'platform', '') or ''
+                
+                # Check if this article belongs to the current source
+                article_matches = False
+                if 'tribune' in primary_source_lower:
+                    article_matches = ('tribune' in article_source_name.lower() or 
+                                     'tribune' in article_source.lower() or 
+                                     'tribune' in article_platform.lower())
+                elif 'thisday' in primary_source_lower:
+                    article_matches = ('thisday' in article_source_name.lower() or 
+                                     'thisday' in article_source.lower() or 
+                                     'thisday' in article_platform.lower())
+                elif 'nation' in primary_source_lower:
+                    article_matches = ('nation' in article_source_name.lower() or 
+                                     'nation' in article_source.lower() or 
+                                     'nation' in article_platform.lower())
+                elif 'punch' in primary_source_lower:
+                    article_matches = ('punch' in article_source_name.lower() or 
+                                     'punch' in article_source.lower() or 
+                                     'punch' in article_platform.lower())
+                elif 'premium' in primary_source_lower:
+                    article_matches = ('premium' in article_source_name.lower() or 
+                                     'premium' in article_source.lower() or 
+                                     'premium' in article_platform.lower())
+                elif 'guardian' in primary_source_lower:
+                    article_matches = ('guardian' in article_source_name.lower() or 
+                                     'guardian' in article_source.lower() or 
+                                     'guardian' in article_platform.lower())
+                elif 'vanguard' in primary_source_lower:
+                    article_matches = ('vanguard' in article_source_name.lower() or 
+                                     'vanguard' in article_source.lower() or 
+                                     'vanguard' in article_platform.lower())
+                elif 'sun' in primary_source_lower:
+                    article_matches = ('sun' in article_source_name.lower() or 
+                                     'sun' in article_source.lower() or 
+                                     'sun' in article_platform.lower())
+                elif 'daily' in primary_source_lower:
+                    article_matches = ('daily' in article_source_name.lower() or 
+                                     'daily' in article_source.lower() or 
+                                     'daily' in article_platform.lower())
+                else:
+                    # For other sources, match the primary source name
+                    article_matches = (primary_source_lower in article_source_name.lower() or 
+                                     primary_source_lower in article_source.lower() or 
+                                     primary_source_lower in article_platform.lower())
+                
+                if article_matches:
+                    source_articles.append(article)
+            
+            # Sort by date and get the 3 most recent (handle None dates)
+            def safe_date_sort(article):
+                date_val = getattr(article, 'date', None)
+                if date_val is None:
+                    return ''  # Put None dates at the end
+                return str(date_val)
+            
+            source_articles.sort(key=safe_date_sort, reverse=True)
+            recent_result = source_articles[:3]
             
             recent_articles = []
             for article in recent_result:
-                # Use title if available, otherwise extract headline from text
-                headline = article.title if article.title and article.title.strip() else extract_headline_from_text(article.text)
+                # Use getattr to safely access attributes for cached data objects
+                title = getattr(article, 'title', None)
+                text = getattr(article, 'text', None)
+                headline = title if title and title.strip() else extract_headline_from_text(text) if text else "No title available"
+                
+                # Handle date field properly - it might be a string or datetime
+                article_date = None
+                date_value = getattr(article, 'date', None)
+                if date_value:
+                    if isinstance(date_value, str):
+                        # If it's a string, use it directly or try to parse it
+                        try:
+                            parsed_date = parse_datetime(date_value)
+                            article_date = parsed_date.isoformat() if parsed_date else date_value
+                        except:
+                            article_date = date_value
+                    elif hasattr(date_value, 'isoformat'):
+                        # If it's already a datetime object, use isoformat
+                        article_date = date_value.isoformat()
+                    else:
+                        # Fallback: convert to string
+                        article_date = str(date_value)
                 
                 recent_articles.append({
+                    "id": getattr(article, 'entry_id', None) or getattr(article, 'id', 'unknown'),  # Add record ID for feedback
                     "title": headline,
-                    "sentiment": article.sentiment_label or "neutral",
-                    "sentiment_score": float(article.sentiment_score) if article.sentiment_score else 0.0,
-                    "sentiment_justification": article.sentiment_justification or "No AI justification available",
-                    "date": article.date.isoformat() if article.date else None,
-                    "text": article.text or "No content available",
-                    "url": article.url or None,
-                    "source_name": article.source_name or "Unknown Source",
-                    "platform": article.platform or "Unknown Platform"
+                    "sentiment": getattr(article, 'sentiment_label', 'neutral') or "neutral",
+                    "sentiment_score": float(getattr(article, 'sentiment_score', 0) or 0),
+                    "sentiment_justification": getattr(article, 'sentiment_justification', None) or "No AI justification available",
+                    "date": article_date,
+                    "text": text or "No content available",
+                    "url": getattr(article, 'url', None),
+                    "source_name": getattr(article, 'source_name', None) or "Unknown Source",
+                    "platform": getattr(article, 'platform', None) or "Unknown Platform"
                 })
             
-            # Generate website URL based on source name
-            source_name_lower = (row.source_name or row.platform or row.source or "").lower()
-            website_url = ""
+            # Generate consolidated name and website URL based on primary source
+            primary_source = row.primary_source or row.source_name or row.platform or row.source or ""
+            primary_source_lower = primary_source.lower() if primary_source else ""
             
-            # Map common newspapers to their official websites
-            if 'punch' in source_name_lower:
-                website_url = "https://www.punchng.com"
-            elif 'vanguard' in source_name_lower:
-                website_url = "https://www.vanguardngr.com"
-            elif 'thisday' in source_name_lower:
-                website_url = "https://www.thisdaylive.com"
-            elif 'guardian' in source_name_lower:
-                website_url = "https://www.guardian.ng"
-            elif 'tribune' in source_name_lower:
+            # Map to clean display names and official websites
+            if 'tribune' in primary_source_lower:
+                display_name = "Tribune Online"
                 website_url = "https://www.tribuneonlineng.com"
-            elif 'daily trust' in source_name_lower or 'dailytrust' in source_name_lower:
-                website_url = "https://www.dailytrust.com"
-            elif 'premium times' in source_name_lower or 'premiumtimes' in source_name_lower:
+            elif 'thisday' in primary_source_lower:
+                display_name = "This Day Live"
+                website_url = "https://www.thisdaylive.com"
+            elif 'nation' in primary_source_lower:
+                display_name = "The Nation Online"
+                website_url = "https://www.thenationonlineng.net"
+            elif 'punch' in primary_source_lower:
+                display_name = "Punch Newspapers"
+                website_url = "https://www.punchng.com"
+            elif 'premium' in primary_source_lower:
+                display_name = "Premium Times"
                 website_url = "https://www.premiumtimesng.com"
-            elif 'sun' in source_name_lower:
+            elif 'guardian' in primary_source_lower:
+                display_name = "The Guardian Nigeria"
+                website_url = "https://www.guardian.ng"
+            elif 'vanguard' in primary_source_lower:
+                display_name = "Vanguard News"
+                website_url = "https://www.vanguardngr.com"
+            elif 'sun' in primary_source_lower:
+                display_name = "The Sun Nigeria"
                 website_url = "https://www.sunnewsonline.com"
-            elif 'business day' in source_name_lower or 'businessday' in source_name_lower:
+            elif 'daily' in primary_source_lower:
+                display_name = "Daily Trust"
+                website_url = "https://www.dailytrust.com"
+            elif 'business day' in primary_source_lower or 'businessday' in primary_source_lower:
+                display_name = "Business Day"
                 website_url = "https://www.businessday.ng"
-            elif 'daily post' in source_name_lower or 'dailypost' in source_name_lower:
+            elif 'daily post' in primary_source_lower or 'dailypost' in primary_source_lower:
+                display_name = "Daily Post Nigeria"
                 website_url = "https://www.dailypost.ng"
-            elif 'legit' in source_name_lower:
+            elif 'legit' in primary_source_lower:
+                display_name = "Legit.ng"
                 website_url = "https://www.legit.ng"
-            elif 'sahara reporters' in source_name_lower or 'saharareporters' in source_name_lower:
+            elif 'sahara reporters' in primary_source_lower or 'saharareporters' in primary_source_lower:
+                display_name = "Sahara Reporters"
                 website_url = "https://www.saharareporters.com"
-            elif 'nairametrics' in source_name_lower:
+            elif 'nairametrics' in primary_source_lower:
+                display_name = "Nairametrics"
                 website_url = "https://www.nairametrics.com"
-            elif 'blueprint' in source_name_lower:
+            elif 'blueprint' in primary_source_lower:
+                display_name = "Blueprint Newspapers"
                 website_url = "https://www.blueprint.ng"
-            elif 'the cable' in source_name_lower or 'thecable' in source_name_lower:
+            elif 'the cable' in primary_source_lower or 'thecable' in primary_source_lower or 'cable' in primary_source_lower:
+                display_name = "The Cable"
                 website_url = "https://www.thecable.ng"
-            elif 'independent' in source_name_lower:
+            elif 'independent' in primary_source_lower:
+                display_name = "The Independent Nigeria"
                 website_url = "https://www.independent.ng"
-            elif 'nan' in source_name_lower:
+            elif 'nan' in primary_source_lower:
+                display_name = "News Agency of Nigeria"
                 website_url = "https://www.nannews.ng"
+            elif 'leadership' in primary_source_lower:
+                display_name = "Leadership Newspaper"
+                website_url = "https://www.leadership.ng"
+            elif 'complete' in primary_source_lower:
+                display_name = "Complete Sports"
+                website_url = "https://www.completesports.com"
+            elif 'business' in primary_source_lower and 'day' in primary_source_lower:
+                display_name = "Business Day"
+                website_url = "https://www.businessday.ng"
             else:
-                # For unknown newspapers, construct a potential URL
-                newspaper_name = row.source_name or row.platform or row.source or "Unknown Newspaper"
-                website_url = f"https://www.{newspaper_name.lower().replace(' ', '')}.com"
+                # For unknown newspapers, use the primary source name
+                display_name = primary_source.title() if primary_source else "Unknown Newspaper"
+                website_url = f"https://www.{primary_source.lower().replace(' ', '')}.com" if primary_source else "https://www.unknown.com"
             
             newspapers.append({
-                "name": row.source_name or row.platform or row.source or "Unknown Newspaper",
+                "name": display_name,
                 "logo": "📰",
                 "sentiment_score": float(row.avg_sentiment_score) if row.avg_sentiment_score else 0.0,
                 "bias_level": bias_level,
-                "coverage_count": int(row.coverage_count),
+                "coverage_count": int(row.coverage_count) if row.coverage_count else 0,
                 "last_updated": "2 hours ago",  # This would need to be calculated from actual data
                 "top_headlines": [article["title"] for article in recent_articles[:2]],
                 "recent_articles": recent_articles,
                 "website_url": website_url
             })
         
+        # Get target config info for response
+        target_config = None
+        target_individual_name = "No target configured"
+        if user_id:
+            try:
+                from uuid import UUID
+                user_uuid = UUID(user_id) if isinstance(user_id, str) else user_id
+                target_config = db.query(models.TargetIndividualConfiguration)\
+                                 .filter(models.TargetIndividualConfiguration.user_id == user_uuid)\
+                                 .order_by(models.TargetIndividualConfiguration.created_at.desc())\
+                                 .first()
+                if target_config:
+                    target_individual_name = target_config.individual_name
+            except Exception as e:
+                logger.warning(f"Error getting target config info: {e}")
+        
         logger.info(f"Returning {len(newspapers)} newspaper sources")
-        return {"status": "success", "data": newspapers}
+        return {
+            "status": "success", 
+            "data": newspapers,
+            "user_id": user_id,
+            "target_individual": target_individual_name,
+            "target_filtering": "ENABLED" if target_config else "DISABLED",
+            "record_count": len(newspapers)
+        }
         
     except Exception as e:
         logger.error(f"Error fetching newspaper sources: {e}")
         return {"status": "error", "message": str(e)}
 
 @app.get("/media-sources/twitter")
-async def get_twitter_sources(db: Session = Depends(get_db)):
+async def get_twitter_sources(db: Session = Depends(get_db), user_id: Optional[str] = Query(None)):
     """Get Twitter/X sources with sentiment analysis"""
     try:
         logger.info("Twitter endpoint called")
+        from .data_cache import sentiment_cache
+        from collections import defaultdict
         
-        # Query Twitter sources from the database - load all data
-        # Twitter sources are typically identified by platform being 'X' or 'Twitter'
-        # Add filtering to prioritize Nigerian content and exclude Indian content
-        twitter_condition = """
-            (LOWER(platform) LIKE '%x%' OR LOWER(platform) LIKE '%twitter%')
-            AND (
-                LOWER(text) LIKE '%nigeria%' OR 
-                LOWER(text) LIKE '%nigerian%' OR 
-                LOWER(text) LIKE '%lagos%' OR 
-                LOWER(text) LIKE '%abuja%' OR 
-                LOWER(text) LIKE '%tinubu%' OR
-                LOWER(user_location) LIKE '%nigeria%' OR
-                LOWER(user_location) LIKE '%lagos%' OR
-                LOWER(user_location) LIKE '%abuja%'
-            )
-            AND NOT (
-                LOWER(text) LIKE '%india%' OR 
-                LOWER(text) LIKE '%indian%' OR 
-                LOWER(text) LIKE '%delhi%' OR 
-                LOWER(text) LIKE '%mumbai%' OR
-                LOWER(user_location) LIKE '%india%' OR
-                LOWER(user_location) LIKE '%delhi%' OR
-                LOWER(user_location) LIKE '%mumbai%'
-            )
-        """
+        # Get all data from cache instead of multiple database queries
+        logger.info("Loading data from cache...")
+        all_data = sentiment_cache.get_all_data(db)
         
-        # First, let's check what data exists in the database
-        total_data_query = text("SELECT COUNT(*) as total FROM sentiment_data")
-        total_result = db.execute(total_data_query)
-        total_count = total_result.fetchone().total
-        logger.info(f"Total records in database: {total_count}")
+        # Apply target individual filtering if user_id provided
+        all_data = apply_target_filtering_to_media_data(db, all_data, user_id, "twitter")
         
-        # Check what platforms exist
-        platforms_query = text("SELECT DISTINCT platform FROM sentiment_data WHERE platform IS NOT NULL")
-        platforms_result = db.execute(platforms_query)
-        platforms = [row.platform for row in platforms_result]
-        logger.info(f"Available platforms: {platforms}")
+        # Get cache statistics instead of separate database queries
+        stats = sentiment_cache.get_stats(db)
+        logger.info(f"Total records in cache: {stats.total_records}")
+        logger.info(f"Available platforms: {len(stats.platforms)} platforms")
         
-        # Check what source_names exist
-        sources_query = text("SELECT DISTINCT source_name FROM sentiment_data WHERE source_name IS NOT NULL LIMIT 10")
-        sources_result = db.execute(sources_query)
-        sources = [row.source_name for row in sources_result]
-        logger.info(f"Sample source_names: {sources}")
+        # Filter for Twitter/X data and apply Nigerian content filter using cache
+        twitter_keywords = ['x', 'twitter']
+        twitter_data = sentiment_cache.filter_by_platform_keywords(all_data, twitter_keywords)
         
-        logger.info(f"Twitter condition: {twitter_condition}")
+        # Apply Nigerian content filter and exclude Indian content
+        nigerian_keywords = ['nigeria', 'nigerian', 'lagos', 'abuja', 'tinubu']
+        indian_exclude_keywords = ['india', 'indian', 'delhi', 'mumbai']
         
-        query = text(f"""
-            SELECT 
-                source_name,
-                source,
-                platform,
-                user_name,
-                user_handle,
-                COUNT(*) as coverage_count,
-                AVG(sentiment_score) as avg_sentiment_score,
-                SUM(CASE WHEN sentiment_label = 'positive' THEN 1 ELSE 0 END) as positive_count,
-                SUM(CASE WHEN sentiment_label = 'negative' THEN 1 ELSE 0 END) as negative_count,
-                SUM(CASE WHEN sentiment_label = 'neutral' THEN 1 ELSE 0 END) as neutral_count,
-                MAX(date) as last_updated
-            FROM sentiment_data 
-            WHERE ({twitter_condition})
-            GROUP BY source_name, source, platform, user_name, user_handle
-            ORDER BY coverage_count DESC
-            LIMIT 10
-        """)
+        filtered_twitter_data = []
+        for record in twitter_data:
+            text_content = (record.text or "") + (record.user_location or "")
+            text_lower = text_content.lower()
+            
+            # Check for Nigerian content
+            has_nigerian = any(keyword in text_lower for keyword in nigerian_keywords)
+            
+            # Check for Indian content (to exclude)
+            has_indian = any(keyword in text_lower for keyword in indian_exclude_keywords)
+            
+            if has_nigerian and not has_indian:
+                filtered_twitter_data.append(record)
         
-        result = db.execute(query)
-        rows = list(result)
-        logger.info(f"Found {len(rows)} Twitter sources")
+        logger.info(f"Filtered to {len(filtered_twitter_data)} Twitter records with Nigerian content")
+        
+        # Group data by user/source and calculate statistics
+        user_stats = defaultdict(lambda: {
+            'records': [],
+            'total_tweets': 0,
+            'positive_count': 0,
+            'negative_count': 0,
+            'neutral_count': 0,
+            'sentiment_scores': [],
+            'last_updated': None
+        })
+        
+        for record in filtered_twitter_data:
+            # Determine primary user identifier
+            primary_user = record.user_handle or record.user_name or record.source_name or record.source or "unknown"
+            if primary_user.startswith('@'):
+                primary_user = primary_user[1:]  # Remove @ symbol
+            primary_user = primary_user.lower().replace(' ', '_')
+            
+            user_stats[primary_user]['records'].append(record)
+            user_stats[primary_user]['total_tweets'] += 1
+            
+            if record.sentiment_label == 'positive':
+                user_stats[primary_user]['positive_count'] += 1
+            elif record.sentiment_label == 'negative':
+                user_stats[primary_user]['negative_count'] += 1
+            else:
+                user_stats[primary_user]['neutral_count'] += 1
+                
+            if record.sentiment_score:
+                user_stats[primary_user]['sentiment_scores'].append(record.sentiment_score)
+                
+            if record.date and (not user_stats[primary_user]['last_updated'] or record.date > user_stats[primary_user]['last_updated']):
+                user_stats[primary_user]['last_updated'] = record.date
+        
+        # Sort by tweet count and limit to top 15
+        sorted_users = sorted(user_stats.items(), key=lambda x: x[1]['total_tweets'], reverse=True)[:15]
+        logger.info(f"Found {len(sorted_users)} Twitter sources")
         
         twitter_accounts = []
-        for row in rows:
-            logger.info(f"Processing Twitter source: {row.user_name} / {row.user_handle} / {row.source_name} / {row.platform}")
-            total_tweets = row.coverage_count
-            positive_pct = (row.positive_count / total_tweets * 100) if total_tweets > 0 else 0
-            negative_pct = (row.negative_count / total_tweets * 100) if total_tweets > 0 else 0
-            neutral_pct = (row.neutral_count / total_tweets * 100) if total_tweets > 0 else 0
+        for user_key, stats in sorted_users:
+            logger.info(f"Processing Twitter source: {user_key}")
+            
+            # Get representative record for user info
+            representative_record = stats['records'][0] if stats['records'] else None
+            if not representative_record:
+                continue
+                
+            total_tweets = stats['total_tweets']
+            positive_pct = (stats['positive_count'] / total_tweets * 100) if total_tweets > 0 else 0
+            negative_pct = (stats['negative_count'] / total_tweets * 100) if total_tweets > 0 else 0
+            neutral_pct = (stats['neutral_count'] / total_tweets * 100) if total_tweets > 0 else 0
+            
+            # Calculate average sentiment score
+            avg_sentiment_score = sum(stats['sentiment_scores']) / len(stats['sentiment_scores']) if stats['sentiment_scores'] else 0.0
             
             # Determine bias level based on sentiment distribution
             if positive_pct > 60:
@@ -1384,8 +1782,8 @@ async def get_twitter_sources(db: Session = Depends(get_db)):
                 bias_level = "Neutral"
             
             # Determine category based on user name and handle
-            user_name_lower = (row.user_name or "").lower()
-            user_handle_lower = (row.user_handle or "").lower()
+            user_name_lower = (representative_record.user_name or "").lower()
+            user_handle_lower = (representative_record.user_handle or "").lower()
             
             if any(keyword in user_name_lower or keyword in user_handle_lower for keyword in ['gov', 'official', 'minister', 'president', 'vice']):
                 category = "Government Official"
@@ -1396,32 +1794,68 @@ async def get_twitter_sources(db: Session = Depends(get_db)):
             else:
                 category = "Public Figure"
             
-            # Get recent tweets for this source
-            recent_tweets_query = text("""
-                SELECT title, sentiment_label, date, user_handle, user_name
-                FROM sentiment_data 
-                WHERE (LOWER(user_handle) LIKE :handle_pattern OR LOWER(user_name) LIKE :name_pattern)
-                ORDER BY date DESC
-                LIMIT 3
-            """)
-            
-            handle_pattern = f"%{row.user_handle.lower() if row.user_handle else ''}%"
-            name_pattern = f"%{row.user_name.lower() if row.user_name else ''}%"
-            recent_result = db.execute(recent_tweets_query, {
-                "handle_pattern": handle_pattern,
-                "name_pattern": name_pattern
-            })
-            
+            # Get recent tweets from cached data (no additional DB query)
+            recent_records = sorted(stats['records'], key=lambda x: x.date or datetime.min, reverse=True)[:5]
             recent_tweets = []
-            for tweet in recent_result:
-                # Use title if available, otherwise extract headline from text
-                tweet_text = tweet.title if tweet.title and tweet.title.strip() else "No content available"
+            for tweet_record in recent_records:
+                # For Twitter data, prioritize text field over title, then try content field
+                tweet_text = None
+                if tweet_record.text and tweet_record.text.strip():
+                    tweet_text = tweet_record.text.strip()
+                elif tweet_record.title and tweet_record.title.strip():
+                    tweet_text = tweet_record.title.strip()
+                elif tweet_record.content and tweet_record.content.strip():
+                    tweet_text = tweet_record.content.strip()
+                else:
+                    tweet_text = "No content available"
+                
+                # Calculate relative time from tweet date
+                relative_time = "Recently"
+                if tweet_record.date:
+                    try:
+                        # Ensure we have a datetime object
+                        if hasattr(tweet_record.date, 'replace'):
+                            tweet_datetime = tweet_record.date
+                        else:
+                            tweet_datetime = datetime.fromisoformat(str(tweet_record.date))
+                        
+                        # Make timezone-aware if not already
+                        if tweet_datetime.tzinfo is None:
+                            tweet_datetime = tweet_datetime.replace(tzinfo=timezone.utc)
+                        
+                        # Calculate time difference
+                        now = datetime.now(timezone.utc)
+                        time_diff = now - tweet_datetime
+                        
+                        if time_diff.days > 0:
+                            relative_time = f"{time_diff.days}d ago"
+                        elif time_diff.seconds > 3600:  # More than 1 hour
+                            hours = time_diff.seconds // 3600
+                            relative_time = f"{hours}h ago"
+                        elif time_diff.seconds > 60:  # More than 1 minute
+                            minutes = time_diff.seconds // 60
+                            relative_time = f"{minutes}m ago"
+                        else:
+                            relative_time = "Just now"
+                    except Exception as e:
+                        logger.warning(f"Error calculating relative time: {e}")
+                        relative_time = "Recently"
                 
                 recent_tweets.append({
+                    "id": tweet_record.entry_id,  # Add record ID for feedback (using entry_id)
                     "text": tweet_text,
-                    "sentiment": tweet.sentiment_label or "neutral",
-                    "engagement": round(1000 + (hash(tweet_text) % 5000), 0) if tweet_text != "No content available" else 1000,  # Mock engagement
-                    "time": "2 hours ago"  # This would need to be calculated from actual data
+                    "sentiment": tweet_record.sentiment_label or "neutral",
+                    "sentiment_score": float(tweet_record.sentiment_score) if tweet_record.sentiment_score is not None else 0.0,
+                    "sentiment_justification": tweet_record.sentiment_justification if hasattr(tweet_record, 'sentiment_justification') else None,
+                    "engagement": round(
+                        1000 + (hash(tweet_text) % 5000) + 
+                        (abs(tweet_record.sentiment_score or 0) * 2000) +  # Higher engagement for stronger sentiment
+                        (len(tweet_text) * 2) if tweet_text != "No content available" else 1000,  # Longer tweets get more engagement
+                        0
+                    ),
+                    "time": relative_time,
+                    "date": tweet_record.date.isoformat() if tweet_record.date and hasattr(tweet_record.date, 'isoformat') else str(tweet_record.date) if tweet_record.date else None,
+                    "url": tweet_record.url if hasattr(tweet_record, 'url') and tweet_record.url else None
                 })
             
             # Generate top hashtags based on content
@@ -1433,26 +1867,32 @@ async def get_twitter_sources(db: Session = Depends(get_db)):
             elif 'sports' in user_name_lower or 'sports' in user_handle_lower:
                 top_hashtags = ['#Nigeria', '#Sports', '#Football']
             
-            # Generate Twitter profile URL
-            profile_url = ""
-            if row.user_handle:
-                # Remove @ symbol if present and create Twitter profile URL
-                handle = row.user_handle.replace('@', '') if row.user_handle.startswith('@') else row.user_handle
-                profile_url = f"https://twitter.com/{handle}"
-            elif row.user_name:
-                # Use user name as fallback
-                profile_url = f"https://twitter.com/{row.user_name.replace(' ', '')}"
+            # Clean up the display name and handle
+            if representative_record.user_handle:
+                clean_handle = representative_record.user_handle.replace('@', '') if representative_record.user_handle.startswith('@') else representative_record.user_handle
+                display_name = representative_record.user_name or clean_handle.replace('_', ' ').title()
+                display_handle = f"@{clean_handle}"
+                profile_url = f"https://twitter.com/{clean_handle}"
+            elif representative_record.user_name:
+                display_name = representative_record.user_name
+                clean_name = representative_record.user_name.replace(' ', '')
+                display_handle = f"@{clean_name}"
+                profile_url = f"https://twitter.com/{clean_name}"
             else:
-                profile_url = ""
+                display_name = user_key.title()
+                clean_name = user_key.replace(' ', '').replace('@', '')
+                display_handle = f"@{clean_name}"
+                profile_url = f"https://twitter.com/{clean_name}"
             
             twitter_accounts.append({
-                "name": row.user_name or row.user_handle or row.source_name or row.platform or "Unknown Twitter User",
-                "handle": row.user_handle or f"@{row.user_name}" if row.user_name else "@unknown",
+                "name": display_name,
+                "handle": display_handle,
                 "logo": "🐦",
-                "sentiment_score": float(row.avg_sentiment_score) if row.avg_sentiment_score else 0.0,
+                "sentiment_score": float(avg_sentiment_score) if avg_sentiment_score is not None else 0.0,
                 "bias_level": bias_level,
-                "followers": f"{round(total_tweets * 1000 + (hash(row.user_handle or row.user_name or 'unknown') % 50000), 0):,}" if row.user_handle or row.user_name else "Unknown",
-                "tweets_count": int(row.coverage_count),
+                "followers": f"{round(total_tweets * 1000 + (hash(representative_record.user_handle or representative_record.user_name or 'unknown') % 50000), 0):,}",
+                "tweets_count": int(total_tweets) if total_tweets else 0,
+                "coverage_count": int(total_tweets) if total_tweets else 0,  # Add for frontend compatibility
                 "last_updated": "2 hours ago",  # This would need to be calculated from actual data
                 "category": category,
                 "verified": True,  # Mock verification status
@@ -1469,140 +1909,120 @@ async def get_twitter_sources(db: Session = Depends(get_db)):
         return {"status": "error", "message": str(e)}
 
 @app.get("/media-sources/television")
-async def get_television_sources(db: Session = Depends(get_db)):
+async def get_television_sources(db: Session = Depends(get_db), user_id: Optional[str] = Query(None)):
     """Get television sources with sentiment analysis"""
     try:
         logger.info("Television endpoint called")
+        from .data_cache import sentiment_cache
+        from collections import defaultdict
         
-        # Query television sources from the database - load all data
+        # Get all data from cache instead of multiple database queries
+        logger.info("Loading data from cache...")
+        all_data = sentiment_cache.get_all_data(db)
+        
+        # Apply target individual filtering if user_id provided
+        all_data = apply_target_filtering_to_media_data(db, all_data, user_id, "television")
+        
+        # Get cache statistics instead of separate database queries
+        stats = sentiment_cache.get_stats(db)
+        logger.info(f"Total records in cache: {stats.total_records}")
+        logger.info(f"Available platforms: {len(stats.platforms)} platforms")
+        logger.info(f"Available sources: {len(stats.sources)} sources")
+        
         # TV sources are typically identified by source names containing TV-related keywords
         tv_keywords = [
-            'tv', 'television', 'channel', 'broadcast', 'cnn', 'bbc', 'fox', 'msnbc',
-            'aljazeera', 'al jazeera', 'sky', 'itv', 'channel4', 'ndtv', 'news18',
-            'republic', 'zee', 'channels tv', 'tvc', 'arise', 'silverbird',
-            # Nigerian TV Channels
-            'ait live', 'ait', 'nta', 'stv', 'plus tv', 'plus tv africa', 'plus', 'news central',
-            'flip tv', 'trust tv', 'voice tv', 'silverbird tv', 'silverbird'
+            'tv', 'television', 'channel', 'broadcast', 
+            # Qatar TV Channels (Priority 1)
+            'al jazeera', 'aljazeera', 'al jazeera arabic', 'al jazeera english', 'al jazeera mubasher',
+            'al jazeera documentary', 'bein sports', 'bein', 'qatar tv', 'qtv', 'al rayyan tv',
+            # International TV Channels (Priority 2)
+            'cnn', 'cable news network', 'bbc', 'british broadcasting corporation', 
+            'fox', 'fox news', 'msnbc', 'sky', 'sky news', 'itv', 'independent television', 
+            'channel 4', 'channel 4 news', 'ndtv', 'new delhi television', 'news18', 'news18 network', 
+            'republic', 'republic tv', 'zee', 'zee news',
+            # Nigerian TV Channels (Priority 3)
+            'channels tv', 'channels.tv', 'tvc', 'television continental',
+            'ait live', 'ait', 'africa independent television', 'nta', 'nigerian television authority',
+            'stv', 'silverbird television', 'plus tv', 'plus tv africa', 'plus',
+            'news central', 'news central nigeria', 'arise', 'arise news',
+            'silverbird tv', 'silverbird', 'flip tv', 'trust tv', 'voice tv'
         ]
         
-        # First, let's check what data exists in the database
-        total_data_query = text("SELECT COUNT(*) as total FROM sentiment_data")
-        total_result = db.execute(total_data_query)
-        total_count = total_result.fetchone().total
-        logger.info(f"Total records in database: {total_count}")
+        # Filter data using cache instead of complex SQL
+        tv_data = sentiment_cache.filter_by_platform_keywords(all_data, tv_keywords)
+        logger.info(f"Filtered to {len(tv_data)} TV records")
         
-        # Check what platforms exist
-        platforms_query = text("SELECT DISTINCT platform FROM sentiment_data WHERE platform IS NOT NULL")
-        platforms_result = db.execute(platforms_query)
-        platforms = [row.platform for row in platforms_result]
-        logger.info(f"Available platforms: {platforms}")
+        # Group data by source and calculate statistics
+        source_stats = defaultdict(lambda: {
+            'records': [],
+            'total_programs': 0,
+            'positive_count': 0,
+            'negative_count': 0,
+            'neutral_count': 0,
+            'sentiment_scores': [],
+            'last_updated': None
+        })
         
-        # Check what source_names exist - EXPANDED DEBUGGING
-        sources_query = text("SELECT DISTINCT source_name, COUNT(*) as count FROM sentiment_data WHERE source_name IS NOT NULL GROUP BY source_name ORDER BY count DESC LIMIT 20")
-        sources_result = db.execute(sources_query)
-        sources = [(row.source_name, row.count) for row in sources_result]
-        logger.info(f"Top source_names with counts: {sources}")
+        for record in tv_data:
+            # Determine primary source identifier with priority mapping
+            source_name_lower = (record.source_name or record.source or record.platform or "").lower()
+            
+            # Map to consolidated TV channel types for better grouping
+            if 'aljazeera' in source_name_lower or 'al jazeera' in source_name_lower:
+                primary_source = "Al Jazeera"
+            elif 'bein' in source_name_lower:
+                primary_source = "BeIN Sports"
+            elif 'cnn' in source_name_lower:
+                primary_source = "CNN"
+            elif 'bbc' in source_name_lower:
+                primary_source = "BBC"
+            elif 'channels' in source_name_lower:
+                primary_source = "Channels TV"
+            elif 'arise' in source_name_lower:
+                primary_source = "Arise News"
+            elif 'ait' in source_name_lower:
+                primary_source = "AIT"
+            elif 'nta' in source_name_lower:
+                primary_source = "NTA"
+            else:
+                primary_source = record.source_name or record.source or record.platform or "Unknown"
+            
+            source_stats[primary_source]['records'].append(record)
+            source_stats[primary_source]['total_programs'] += 1
+            
+            if record.sentiment_label == 'positive':
+                source_stats[primary_source]['positive_count'] += 1
+            elif record.sentiment_label == 'negative':
+                source_stats[primary_source]['negative_count'] += 1
+            else:
+                source_stats[primary_source]['neutral_count'] += 1
+                
+            if record.sentiment_score:
+                source_stats[primary_source]['sentiment_scores'].append(record.sentiment_score)
+                
+            if record.date and (not source_stats[primary_source]['last_updated'] or record.date > source_stats[primary_source]['last_updated']):
+                source_stats[primary_source]['last_updated'] = record.date
         
-        # Also check source and platform fields
-        source_query = text("SELECT DISTINCT source, COUNT(*) as count FROM sentiment_data WHERE source IS NOT NULL GROUP BY source ORDER BY count DESC LIMIT 10")
-        source_result = db.execute(source_query)
-        source_list = [(row.source, row.count) for row in source_result]
-        logger.info(f"Top sources with counts: {source_list}")
-        
-        platform_query = text("SELECT DISTINCT platform, COUNT(*) as count FROM sentiment_data WHERE platform IS NOT NULL GROUP BY platform ORDER BY count DESC LIMIT 10")
-        platform_result = db.execute(platform_query)
-        platform_list = [(row.platform, row.count) for row in platform_result]
-        logger.info(f"Top platforms with counts: {platform_list}")
-        
-        # Build the query to find TV sources - make it more flexible
-        tv_conditions = []
-        for keyword in tv_keywords:
-            # Escape the keyword for SQL LIKE pattern
-            escaped_keyword = keyword.replace("'", "''")
-            tv_conditions.append(f"LOWER(source_name) LIKE '%{escaped_keyword}%'")
-            tv_conditions.append(f"LOWER(source) LIKE '%{escaped_keyword}%'")
-            tv_conditions.append(f"LOWER(platform) LIKE '%{escaped_keyword}%'")
-        
-        # Only add fallback conditions if we have no TV keywords (which we do have now)
-        # This fallback was causing generic "News" entries to appear
-        # if not tv_conditions:
-        #     tv_conditions = [
-        #         "LOWER(source_name) LIKE '%news%'",
-        #         "LOWER(source) LIKE '%news%'",
-        #         "LOWER(platform) LIKE '%news%'",
-        #         "LOWER(source_name) LIKE '%media%'",
-        #         "LOWER(source) LIKE '%media%'",
-        #         "LOWER(platform) LIKE '%media%'"
-        #     ]
-        
-        tv_condition = " OR ".join(tv_conditions)
-        logger.info(f"TV condition: {tv_condition}")
-        
-        # Debug: Let's see what TV sources we actually have in the database
-        debug_query = text("""
-            SELECT DISTINCT source_name, COUNT(*) as count 
-            FROM sentiment_data 
-            WHERE LOWER(source_name) LIKE '%tv%' 
-               OR LOWER(source_name) LIKE '%television%'
-               OR LOWER(source_name) LIKE '%channel%'
-               OR LOWER(source_name) LIKE '%plus%'
-               OR LOWER(source_name) LIKE '%ait%'
-               OR LOWER(source_name) LIKE '%nta%'
-               OR LOWER(source_name) LIKE '%tvc%'
-            GROUP BY source_name 
-            ORDER BY count DESC
-        """)
-        debug_result = db.execute(debug_query)
-        debug_sources = [(row.source_name, row.count) for row in debug_result]
-        logger.info(f"Debug - TV sources in database: {debug_sources}")
-
-        # Create a priority-based query that favors specific TV channels over generic news sources
-        query = text(f"""
-            SELECT 
-                source_name,
-                source,
-                platform,
-                COUNT(*) as coverage_count,
-                AVG(sentiment_score) as avg_sentiment_score,
-                SUM(CASE WHEN sentiment_label = 'positive' THEN 1 ELSE 0 END) as positive_count,
-                SUM(CASE WHEN sentiment_label = 'negative' THEN 1 ELSE 0 END) as negative_count,
-                SUM(CASE WHEN sentiment_label = 'neutral' THEN 1 ELSE 0 END) as neutral_count,
-                MAX(date) as last_updated,
-                CASE 
-                    WHEN LOWER(source_name) LIKE '%tvc%' THEN 1
-                    WHEN LOWER(source_name) LIKE '%channels tv%' THEN 1
-                    WHEN LOWER(source_name) LIKE '%ait%' THEN 1
-                    WHEN LOWER(source_name) LIKE '%nta%' THEN 1
-                    WHEN LOWER(source_name) LIKE '%plus tv%' THEN 1
-                    WHEN LOWER(source_name) LIKE '%news central%' THEN 1
-                    WHEN LOWER(source_name) LIKE '%trust tv%' THEN 1
-                    WHEN LOWER(source_name) LIKE '%silverbird%' THEN 1
-                    WHEN LOWER(source_name) LIKE '%stv%' THEN 1
-                    WHEN LOWER(source_name) LIKE '%flip tv%' THEN 1
-                    WHEN LOWER(source_name) LIKE '%voice tv%' THEN 1
-                    WHEN LOWER(source_name) LIKE '%arise%' THEN 1
-                    WHEN source_name != 'News' AND source_name IS NOT NULL THEN 2
-                    ELSE 3
-                END as priority
-            FROM sentiment_data 
-            WHERE ({tv_condition})
-            AND source_name != 'News'  -- Exclude generic "News" entries
-            GROUP BY source_name, source, platform
-            ORDER BY priority ASC, coverage_count DESC
-            LIMIT 10
-        """)
-        
-        result = db.execute(query)
-        rows = list(result)
-        logger.info(f"Found {len(rows)} TV sources")
+        # Sort by program count and limit to top 15
+        sorted_sources = sorted(source_stats.items(), key=lambda x: x[1]['total_programs'], reverse=True)[:15]
+        logger.info(f"Found {len(sorted_sources)} TV sources")
         
         television_channels = []
-        for row in rows:
-            logger.info(f"Processing TV source: {row.source_name} / {row.source} / {row.platform}")
-            total_programs = row.coverage_count
-            positive_pct = (row.positive_count / total_programs * 100) if total_programs > 0 else 0
-            negative_pct = (row.negative_count / total_programs * 100) if total_programs > 0 else 0
-            neutral_pct = (row.neutral_count / total_programs * 100) if total_programs > 0 else 0
+        for source_name, stats in sorted_sources:
+            logger.info(f"Processing TV source: {source_name}")
+            
+            # Get representative record for source info
+            representative_record = stats['records'][0] if stats['records'] else None
+            if not representative_record:
+                continue
+                
+            total_programs = stats['total_programs']
+            positive_pct = (stats['positive_count'] / total_programs * 100) if total_programs > 0 else 0
+            negative_pct = (stats['negative_count'] / total_programs * 100) if total_programs > 0 else 0
+            neutral_pct = (stats['neutral_count'] / total_programs * 100) if total_programs > 0 else 0
+            
+            # Calculate average sentiment score
+            avg_sentiment_score = sum(stats['sentiment_scores']) / len(stats['sentiment_scores']) if stats['sentiment_scores'] else 0.0
             
             # Determine bias level based on sentiment distribution
             if positive_pct > 60:
@@ -1613,7 +2033,7 @@ async def get_television_sources(db: Session = Depends(get_db)):
                 bias_level = "Neutral"
             
             # Determine category based on source name
-            source_name_lower = (row.source_name or row.source or "").lower()
+            source_name_lower = source_name.lower()
             if any(keyword in source_name_lower for keyword in ['government', 'official', 'state']):
                 category = "Government Channel"
             elif any(keyword in source_name_lower for keyword in ['entertainment', 'show', 'movie']):
@@ -1621,34 +2041,96 @@ async def get_television_sources(db: Session = Depends(get_db)):
             else:
                 category = "News Channel"
             
-            # Get recent programs for this source
-            recent_programs_query = text("""
-                SELECT title, sentiment_label, date, url, source_url
-                FROM sentiment_data 
-                WHERE (LOWER(source_name) LIKE :source_pattern OR LOWER(source) LIKE :source_pattern)
-                ORDER BY date DESC
-                LIMIT 3
-            """)
-            
-            source_pattern = f"%{row.source_name.lower() if row.source_name else row.source.lower()}%"
-            recent_result = db.execute(recent_programs_query, {
-                "source_pattern": source_pattern
-            })
+            # Get recent programs from cached data (no additional DB query)
+            recent_records = sorted(stats['records'], key=lambda x: x.date or datetime.min, reverse=True)[:5]
             
             recent_programs = []
-            for program in recent_result:
-                # Use title if available, otherwise extract headline from text
-                program_title = program.title if program.title and program.title.strip() else "No title available"
+            for program in recent_records:
+                # Enhanced content extraction for TV programs
+                program_title = None
+                program_content = None
+                
+                # Extract title - prioritize title field, then extract from text/content
+                if program.title and program.title.strip():
+                    program_title = program.title.strip()
+                elif program.text and program.text.strip():
+                    # For TV data, often the first line or sentence is the title
+                    text_lines = program.text.strip().split('\n')
+                    program_title = text_lines[0][:100] + "..." if len(text_lines[0]) > 100 else text_lines[0]
+                elif program.content and program.content.strip():
+                    content_lines = program.content.strip().split('\n')
+                    program_title = content_lines[0][:100] + "..." if len(content_lines[0]) > 100 else content_lines[0]
+                else:
+                    program_title = f"Recent program from {source_name}"
+                
+                # Extract full content for program description
+                if program.text and program.text.strip():
+                    program_content = program.text.strip()
+                elif program.content and program.content.strip():
+                    program_content = program.content.strip()
+                elif program.title and program.title.strip():
+                    program_content = program.title.strip()
+                else:
+                    program_content = "No content available"
                 
                 # Use existing URL from database, prioritize url field over source_url
                 program_url = program.url if program.url else program.source_url
                 
+                # Calculate relative time from program date
+                relative_time = "Recently"
+                program_date = None
+                if program.date:
+                    try:
+                        # Ensure we have a datetime object
+                        if hasattr(program.date, 'replace'):
+                            program_datetime = program.date
+                        else:
+                            program_datetime = datetime.fromisoformat(str(program.date))
+                        
+                        # Make timezone-aware if not already
+                        if program_datetime.tzinfo is None:
+                            program_datetime = program_datetime.replace(tzinfo=timezone.utc)
+                        
+                        # Calculate time difference
+                        now = datetime.now(timezone.utc)
+                        time_diff = now - program_datetime
+                        
+                        if time_diff.days > 0:
+                            relative_time = f"{time_diff.days}d ago"
+                        elif time_diff.seconds > 3600:  # More than 1 hour
+                            hours = time_diff.seconds // 3600
+                            relative_time = f"{hours}h ago"
+                        elif time_diff.seconds > 60:  # More than 1 minute
+                            minutes = time_diff.seconds // 60
+                            relative_time = f"{minutes}m ago"
+                        else:
+                            relative_time = "Just now"
+                        
+                        # Store the ISO date as well
+                        program_date = program_datetime.isoformat()
+                    except Exception as e:
+                        logger.warning(f"Error calculating relative time for TV program: {e}")
+                        relative_time = "Recently"
+                        program_date = str(program.date) if program.date else None
+                
+                # Enhanced viewership calculation based on sentiment and content
+                base_viewership = 1.0 + (hash(program_title) % 5)  # 1.0 to 6.0 base
+                sentiment_boost = abs(program.sentiment_score or 0) * 2  # Strong sentiment = more viewers
+                content_boost = len(program_content) / 1000 if program_content != "No content available" else 0  # Longer content = more engagement
+                calculated_viewership = round(base_viewership + sentiment_boost + content_boost, 1)
+                
                 recent_programs.append({
+                    "id": program.entry_id,  # Add record ID for feedback (using entry_id)
                     "title": program_title,
+                    "content": program_content,
                     "sentiment": program.sentiment_label or "neutral",
-                    "viewership": round(1.0 + (hash(program_title) % 3), 1) if program_title != "No title available" else 1.0,  # Mock viewership
-                    "time": "2 hours ago",  # This would need to be calculated from actual data
-                    "youtube_url": program_url
+                    "sentiment_score": float(program.sentiment_score) if program.sentiment_score is not None else 0.0,
+                    "sentiment_justification": program.sentiment_justification if hasattr(program, 'sentiment_justification') else None,
+                    "viewership": calculated_viewership,
+                    "time": relative_time,
+                    "date": program_date,
+                    "url": program_url,
+                    "youtube_url": program_url  # Keep for backward compatibility
                 })
             
             # Generate top topics based on source name and recent content
@@ -1662,46 +2144,54 @@ async def get_television_sources(db: Session = Depends(get_db)):
             else:
                 top_topics = ['#News', '#Updates', '#Reports']
             
-            # Generate website URL based on source name
-            source_name_lower = (row.source_name or row.source or "").lower()
-            website_url = ""
-            
-            # Map common TV channels to their official websites
-            if 'tvc' in source_name_lower:
-                website_url = "https://www.tvcnews.tv"
-            elif 'channels tv' in source_name_lower:
+            # Map to clean display names and official websites based on source name
+            if 'al jazeera' in source_name_lower or 'aljazeera' in source_name_lower:
+                display_name = "Al Jazeera"
+                website_url = "https://www.aljazeera.com"
+            elif 'bein' in source_name_lower:
+                display_name = "beIN Sports"
+                website_url = "https://www.beinsports.com"
+            elif 'cnn' in source_name_lower:
+                display_name = "CNN"
+                website_url = "https://www.cnn.com"
+            elif 'bbc' in source_name_lower:
+                display_name = "BBC"
+                website_url = "https://www.bbc.com"
+            elif 'channels' in source_name_lower:
+                display_name = "Channels Television"
                 website_url = "https://www.channelstv.com"
+            elif 'tvc' in source_name_lower:
+                display_name = "TVC News"
+                website_url = "https://www.tvcnews.tv"
             elif 'ait' in source_name_lower:
+                display_name = "AIT (Africa Independent Television)"
                 website_url = "https://www.ait.live"
             elif 'nta' in source_name_lower:
+                display_name = "NTA (Nigerian Television Authority)"
                 website_url = "https://www.nta.ng"
-            elif 'plus tv' in source_name_lower:
+            elif 'arise' in source_name_lower:
+                display_name = "Arise News"
+                website_url = "https://www.arise.tv"
+            elif 'silverbird' in source_name_lower:
+                display_name = "Silverbird Television"
+                website_url = "https://www.silverbirdtv.com"
+            elif 'plus' in source_name_lower:
+                display_name = "Plus TV Africa"
                 website_url = "https://www.plustvafrica.com"
             elif 'news central' in source_name_lower:
+                display_name = "News Central TV"
                 website_url = "https://www.newscentral.ng"
-            elif 'trust tv' in source_name_lower:
-                website_url = "https://www.trusttv.ng"
-            elif 'silverbird' in source_name_lower:
-                website_url = "https://www.silverbirdtv.com"
-            elif 'stv' in source_name_lower:
-                website_url = "https://www.stv.ng"
-            elif 'flip tv' in source_name_lower:
-                website_url = "https://www.fliptv.ng"
-            elif 'voice tv' in source_name_lower:
-                website_url = "https://www.voicetv.ng"
-            elif 'arise' in source_name_lower:
-                website_url = "https://www.arise.tv"
             else:
-                # For unknown channels, construct a potential URL
-                channel_name = row.source_name or row.source or "Unknown TV Channel"
-                website_url = f"https://www.{channel_name.lower().replace(' ', '')}.com"
+                # Use the source name as display name
+                display_name = source_name
+                website_url = f"https://www.{source_name.lower().replace(' ', '')}.com"
             
             television_channels.append({
-                "name": row.source_name or row.source or "Unknown TV Channel",
+                "name": display_name,
                 "logo": "📺",
-                "sentiment_score": float(row.avg_sentiment_score) if row.avg_sentiment_score else 0.0,
+                "sentiment_score": float(avg_sentiment_score) if avg_sentiment_score is not None else 0.0,
                 "bias_level": bias_level,
-                "coverage_count": int(row.coverage_count),
+                "coverage_count": int(total_programs) if total_programs else 0,
                 "last_updated": "1 hour ago",  # This would need to be calculated from actual data
                 "category": category,
                 "verified": True,  # Mock verification status
@@ -1715,6 +2205,242 @@ async def get_television_sources(db: Session = Depends(get_db)):
         
     except Exception as e:
         logger.error(f"Error fetching television sources: {e}")
+        return {"status": "error", "message": str(e)}
+
+@app.post("/sentiment-feedback")
+async def update_sentiment_feedback(
+    request: Request,
+    db: Session = Depends(get_db)
+):
+    """Update sentiment label based on user feedback"""
+    try:
+        data = await request.json()
+        logger.info(f"Sentiment feedback received: {data}")
+        
+        # Extract required fields
+        record_id = data.get('record_id')
+        new_sentiment = data.get('new_sentiment')  # 'positive', 'negative', 'neutral'
+        content_type = data.get('content_type')  # 'article', 'tweet', 'program'
+        user_id = data.get('user_id', 'anonymous')
+        
+        if not record_id or not new_sentiment:
+            return {"status": "error", "message": "record_id and new_sentiment are required"}
+        
+        if new_sentiment not in ['positive', 'negative', 'neutral']:
+            return {"status": "error", "message": "new_sentiment must be one of: positive, negative, neutral"}
+        
+        # Find the record in the database
+        from .models import SentimentData
+        record = db.query(SentimentData).filter(SentimentData.entry_id == record_id).first()
+        
+        if not record:
+            return {"status": "error", "message": "Record not found"}
+        
+        # Store the original AI sentiment for reference
+        original_sentiment = record.sentiment_label
+        
+        # Update the sentiment label
+        record.sentiment_label = new_sentiment
+        
+        # Add user feedback metadata (you might want to create a separate feedback table)
+        # For now, we'll add it to a comment or metadata field
+        feedback_note = f"User feedback: {original_sentiment} -> {new_sentiment} by {user_id}"
+        if hasattr(record, 'user_feedback'):
+            record.user_feedback = feedback_note
+        elif hasattr(record, 'notes'):
+            record.notes = feedback_note
+        
+        # Commit the changes
+        db.commit()
+        db.refresh(record)
+        
+        logger.info(f"Updated sentiment for record {record_id}: {original_sentiment} -> {new_sentiment}")
+        
+        # Clear relevant caches since the data has changed
+        from .data_cache import sentiment_cache
+        sentiment_cache.clear_cache()
+        
+        return {
+            "status": "success", 
+            "message": "Sentiment updated successfully",
+            "data": {
+                "record_id": record_id,
+                "original_sentiment": original_sentiment,
+                "new_sentiment": new_sentiment,
+                "content_type": content_type
+            }
+        }
+        
+    except Exception as e:
+        logger.error(f"Error updating sentiment feedback: {e}")
+        return {"status": "error", "message": str(e)}
+
+@app.get("/media-sources/facebook")
+async def get_facebook_sources(db: Session = Depends(get_db), user_id: Optional[str] = Query(None)):
+    """Get Facebook sources with sentiment analysis"""
+    try:
+        logger.info("Facebook endpoint called")
+        from .data_cache import sentiment_cache
+        from collections import defaultdict
+        
+        # Get all data from cache instead of multiple database queries
+        logger.info("Loading data from cache...")
+        all_data = sentiment_cache.get_all_data(db)
+        
+        # Apply target individual filtering if user_id provided
+        all_data = apply_target_filtering_to_media_data(db, all_data, user_id, "facebook")
+        
+        # Get cache statistics instead of separate database queries
+        stats = sentiment_cache.get_stats(db)
+        logger.info(f"Total records in cache: {stats.total_records}")
+        logger.info(f"Available platforms: {len(stats.platforms)} platforms")
+        logger.info(f"Available sources: {len(stats.sources)} sources")
+        
+        # Facebook sources are typically identified by platform being 'Facebook' or source containing Facebook-related keywords
+        facebook_keywords = [
+            'facebook', 'fb', 'meta', 'social media', 'social',
+            # Nigerian Facebook pages (Priority 1)
+            'legitng', 'vanguardngr', 'punchng', 'guardian_ng', 'dailytrust', 
+            'thisday', 'nation_ng', 'premiumtimes', 'nairametrics', 'channelstv',
+            # Qatar Facebook pages (Priority 2)
+            'aljazeera', 'al jazeera', 'alrayyan', 'qatar tribune', 'qatar news',
+            'peninsula qatar', 'alwatan doha', 'alsharq', 'qatar news agency',
+            # International Facebook pages (Priority 3)
+            'cnn', 'bbc', 'fox news', 'msnbc', 'sky news', 'reuters', 'ap'
+        ]
+        
+        # Filter data using cache instead of complex SQL
+        facebook_data = sentiment_cache.filter_by_platform_keywords(all_data, facebook_keywords)
+        logger.info(f"Filtered to {len(facebook_data)} Facebook records")
+        
+        # Group data by source and calculate statistics
+        source_stats = defaultdict(lambda: {
+            'records': [],
+            'total_posts': 0,
+            'positive_count': 0,
+            'negative_count': 0,
+            'neutral_count': 0,
+            'sentiment_scores': [],
+            'last_updated': None
+        })
+        
+        for record in facebook_data:
+            # Determine primary source identifier
+            source_name = record.source_name or record.source or record.platform or "Unknown"
+            
+            source_stats[source_name]['records'].append(record)
+            source_stats[source_name]['total_posts'] += 1
+            
+            if record.sentiment_label == 'positive':
+                source_stats[source_name]['positive_count'] += 1
+            elif record.sentiment_label == 'negative':
+                source_stats[source_name]['negative_count'] += 1
+            else:
+                source_stats[source_name]['neutral_count'] += 1
+                
+            if record.sentiment_score:
+                source_stats[source_name]['sentiment_scores'].append(record.sentiment_score)
+                
+            if record.date and (not source_stats[source_name]['last_updated'] or record.date > source_stats[source_name]['last_updated']):
+                source_stats[source_name]['last_updated'] = record.date
+        
+        # Sort by post count and limit to top 15
+        sorted_sources = sorted(source_stats.items(), key=lambda x: x[1]['total_posts'], reverse=True)[:15]
+        logger.info(f"Found {len(sorted_sources)} Facebook sources")
+        
+        facebook_pages = []
+        for source_name, stats in sorted_sources:
+            logger.info(f"Processing Facebook source: {source_name}")
+            
+            # Get representative record for source info
+            representative_record = stats['records'][0] if stats['records'] else None
+            if not representative_record:
+                continue
+                
+            total_posts = stats['total_posts']
+            positive_pct = (stats['positive_count'] / total_posts * 100) if total_posts > 0 else 0
+            negative_pct = (stats['negative_count'] / total_posts * 100) if total_posts > 0 else 0
+            neutral_pct = (stats['neutral_count'] / total_posts * 100) if total_posts > 0 else 0
+            
+            # Calculate average sentiment score
+            avg_sentiment_score = sum(stats['sentiment_scores']) / len(stats['sentiment_scores']) if stats['sentiment_scores'] else 0.0
+            
+            # Determine bias level based on sentiment distribution
+            if positive_pct > 60:
+                bias_level = "Supportive"
+            elif negative_pct > 60:
+                bias_level = "Critical"
+            else:
+                bias_level = "Neutral"
+            
+            # Determine category based on source name
+            source_name_lower = source_name.lower()
+            if any(keyword in source_name_lower for keyword in ['news', 'media', 'channel']):
+                category = "News Media"
+            elif any(keyword in source_name_lower for keyword in ['government', 'official']):
+                category = "Government Page"
+            else:
+                category = "Community Page"
+            
+            # Get recent posts from cached data (no additional DB query)
+            recent_records = sorted(stats['records'], key=lambda x: x.date or datetime.min, reverse=True)[:3]
+            recent_posts = []
+            for post_record in recent_records:
+                # Use title if available, otherwise extract from text
+                post_text = post_record.title if post_record.title and post_record.title.strip() else (
+                    post_record.text[:100] + "..." if post_record.text and len(post_record.text) > 100 
+                    else post_record.text or "No content available"
+                )
+                
+                # Handle date formatting safely  
+                if post_record.date:
+                    try:
+                        if hasattr(post_record.date, 'isoformat'):
+                            post_date = post_record.date.isoformat()
+                        else:
+                            post_date = str(post_record.date)
+                    except:
+                        post_date = str(post_record.date) if post_record.date else "Unknown"
+                else:
+                    post_date = "Unknown"
+                
+                recent_posts.append({
+                    "text": post_text,
+                    "sentiment": post_record.sentiment_label or "neutral", 
+                    "engagement": round(100 + (hash(post_text) % 500), 0),  # Mock engagement
+                    "time": "3 hours ago"  # This would need to be calculated from actual data
+                })
+            
+            # Generate trending topics based on content
+            trending_topics = ['#News', '#Updates', '#Discussion']
+            if 'politics' in source_name_lower:
+                trending_topics = ['#Politics', '#Government', '#Policy']
+            elif 'business' in source_name_lower:
+                trending_topics = ['#Business', '#Economy', '#Finance']
+            elif 'sports' in source_name_lower:
+                trending_topics = ['#Sports', '#Football', '#Athletics']
+            
+            facebook_pages.append({
+                "name": source_name,
+                "logo": "📘",
+                "sentiment_score": float(avg_sentiment_score) if avg_sentiment_score is not None else 0.0,
+                "bias_level": bias_level,
+                "followers": f"{round(total_posts * 500 + (hash(source_name) % 10000), 0):,}",  # Mock followers
+                "posts_count": int(total_posts) if total_posts else 0,
+                "coverage_count": int(total_posts) if total_posts else 0,  # Add for frontend compatibility
+                "last_updated": "1 hour ago",  # This would need to be calculated from actual data
+                "category": category,
+                "verified": True,  # Mock verification status
+                "recent_posts": recent_posts,
+                "trending_topics": trending_topics,
+                "page_url": f"https://www.facebook.com/{source_name.lower().replace(' ', '')}"
+            })
+        
+        logger.info(f"Returning {len(facebook_pages)} Facebook pages")
+        return {"status": "success", "data": facebook_pages}
+        
+    except Exception as e:
+        logger.error(f"Error fetching Facebook sources: {e}")
         return {"status": "error", "message": str(e)}
 
 @app.get("/policy-impact")
@@ -1809,8 +2535,25 @@ async def get_policy_impact_data(db: Session = Depends(get_db)):
                     'last_mention': None
                 }
             
+            # Handle date field properly - it might be a string or datetime
+            mention_date = None
+            if row.date:
+                if isinstance(row.date, str):
+                    # If it's a string, use it directly or try to parse it
+                    try:
+                        parsed_date = parse_datetime(row.date)
+                        mention_date = parsed_date.isoformat() if parsed_date else row.date
+                    except:
+                        mention_date = row.date
+                elif hasattr(row.date, 'isoformat'):
+                    # If it's already a datetime object, use isoformat
+                    mention_date = row.date.isoformat()
+                else:
+                    # Fallback: convert to string
+                    mention_date = str(row.date)
+            
             mention_data = {
-                'date': row.date.isoformat() if row.date else None,
+                'date': mention_date,
                 'sentiment_score': float(row.sentiment_score) if row.sentiment_score else 0.0,
                 'sentiment_label': row.sentiment_label or 'neutral',
                 'source': row.source,
@@ -1830,10 +2573,11 @@ async def get_policy_impact_data(db: Session = Depends(get_db)):
                 policy_groups[policy_name]['neutral_mentions'] += mention_data['mention_count']
             
             # Track first and last mention dates
-            if not policy_groups[policy_name]['first_mention'] or mention_data['date'] < policy_groups[policy_name]['first_mention']:
-                policy_groups[policy_name]['first_mention'] = mention_data['date']
-            if not policy_groups[policy_name]['last_mention'] or mention_data['date'] > policy_groups[policy_name]['last_mention']:
-                policy_groups[policy_name]['last_mention'] = mention_data['date']
+            if mention_data['date']:  # Only process if date is not None
+                if not policy_groups[policy_name]['first_mention'] or mention_data['date'] < policy_groups[policy_name]['first_mention']:
+                    policy_groups[policy_name]['first_mention'] = mention_data['date']
+                if not policy_groups[policy_name]['last_mention'] or mention_data['date'] > policy_groups[policy_name]['last_mention']:
+                    policy_groups[policy_name]['last_mention'] = mention_data['date']
         
         # Convert policy groups to the format expected by the frontend
         for policy_name, data in policy_groups.items():

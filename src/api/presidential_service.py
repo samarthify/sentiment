@@ -11,6 +11,7 @@ from sqlalchemy import func
 import csv
 import os
 from pathlib import Path
+from uuid import UUID
 
 # Import the presidential analyzer
 import sys
@@ -552,21 +553,32 @@ async def update_latest_data_with_presidential_analysis(user_id: str, db: Sessio
     """
     Get data from latest-data endpoint and update the 3 existing fields with presidential analysis.
     This function fetches the latest data and updates sentiment_label, sentiment_score, and sentiment_justification.
+    Now uses the authenticated user's target configuration instead of hardcoded search terms.
     """
     try:
         logger.info(f"Updating latest data with presidential analysis for user: {user_id}")
         
-        # Build search conditions for President Bola Tinubu (original intent)
-        from sqlalchemy import or_
-        search_terms = [
-            "Bola Tinubu",
-            "President Bola Tinubu", 
-            "President Tinubu",
-            "Tinubu",
-            "Bola Ahmed Tinubu",
-            "President Bola Ahmed Tinubu"
-        ]
+        # Get the user's target configuration from database
+        target_config = db.query(models.TargetIndividualConfiguration)\
+                         .filter(models.TargetIndividualConfiguration.user_id == user_id)\
+                         .order_by(models.TargetIndividualConfiguration.created_at.desc())\
+                         .first()
         
+        if not target_config:
+            return {
+                "error": f"No target configuration found for user {user_id}. Please configure your target individual first.",
+                "user_id": user_id,
+                "timestamp": datetime.now().isoformat()
+            }
+        
+        # Use the user's target configuration instead of hardcoded terms
+        search_terms = [target_config.individual_name] + target_config.query_variations
+        
+        logger.info(f"Using target configuration for user {user_id}: {target_config.individual_name} with {len(target_config.query_variations)} query variations")
+        logger.info(f"Search terms: {search_terms}")
+        
+        # Build search conditions for the user's target individual
+        from sqlalchemy import or_
         search_conditions = []
         for term in search_terms:
             if term and term.strip():
@@ -580,17 +592,19 @@ async def update_latest_data_with_presidential_analysis(user_id: str, db: Sessio
         
         if not search_conditions:
             return {
-                "error": "No valid search terms found for President Bola Tinubu",
+                "error": f"No valid search terms found for target individual: {target_config.individual_name}",
                 "user_id": user_id,
+                "target_individual": target_config.individual_name,
                 "timestamp": datetime.now().isoformat()
             }
         
         # Combine all search conditions with OR
         combined_search = or_(*search_conditions)
         
-        # Get records that mention President Bola Tinubu and DON'T have "recommended action"
+        # Get records that mention the user's target individual and DON'T have "recommended action"
         # Process ALL records that don't have "recommended action" in their justification
         records_to_update = db.query(models.SentimentData)\
+                              .filter(models.SentimentData.user_id == user_id)\
                               .filter(combined_search)\
                               .filter(
                                   or_(
@@ -603,13 +617,14 @@ async def update_latest_data_with_presidential_analysis(user_id: str, db: Sessio
         
         if not records_to_update:
             return {
-                "message": "No records found that mention President Bola Tinubu and need 'recommended action'",
+                "message": f"No records found that mention {target_config.individual_name} and need 'recommended action'",
                 "user_id": user_id,
+                "target_individual": target_config.individual_name,
                 "processed_count": 0,
                 "timestamp": datetime.now().isoformat()
             }
         
-        logger.info(f"Found {len(records_to_update)} President Bola Tinubu records to update with presidential analysis (records without 'recommended action')")
+        logger.info(f"Found {len(records_to_update)} {target_config.individual_name} records to update with presidential analysis (records without 'recommended action')")
         
         # Apply deduplication to remove duplicate content before processing
         deduplicated_records = deduplicate_sentiment_data(records_to_update)
@@ -721,22 +736,23 @@ async def update_latest_data_with_presidential_analysis(user_id: str, db: Sessio
         csv_filepath = save_presidential_analysis_to_csv(processed_data_for_csv, user_id)
         
         response = {
-            "message": f"Successfully updated {processed_count} records with presidential analysis (deduplicated, batched every 50)",
+            "message": f"Successfully updated {processed_count} records with presidential analysis for {target_config.individual_name} (deduplicated, batched every 50)",
             "user_id": user_id,
             "processed_count": processed_count,
             "total_records_found": len(records_to_update),
             "unique_records_after_dedup": len(deduplicated_records),
-            "target_individual": "President Bola Tinubu",
+            "target_individual": target_config.individual_name,  # Now dynamic based on user config
+            "query_variations": target_config.query_variations,  # Include user's query variations
             "updated_records": updated_records[:10],  # Show first 10 for preview
             "csv_backup_file": csv_filepath if csv_filepath else "No backup file created",
             "timestamp": datetime.now().isoformat()
         }
         
-        logger.info(f"Presidential analysis update completed: {processed_count}/{len(deduplicated_records)} records updated")
+        logger.info(f"Presidential analysis update completed for user {user_id}: {processed_count}/{len(deduplicated_records)} records updated")
         return response
         
     except Exception as e:
-        logger.error(f"Error updating latest data with presidential analysis: {e}", exc_info=True)
+        logger.error(f"Error updating latest data with presidential analysis for user {user_id}: {e}", exc_info=True)
         db.rollback()
         raise HTTPException(status_code=500, detail=f"Presidential analysis update failed: {str(e)}")
 
@@ -822,29 +838,24 @@ def add_presidential_endpoints(app: FastAPI):
         return await update_presidential_priorities(request)
     
     @app.get("/presidential/report")
-    async def generate_report(db: Session = Depends(get_db)):
-        """Generate a comprehensive presidential strategic report."""
-        default_user_id = "6440da7f-e630-4b2f-884e-a8721cc9a9c0"
-        return await generate_presidential_report(default_user_id, db)
+    async def generate_report(db: Session = Depends(get_db), user_id: UUID = Depends(get_current_user_id)):
+        """Generate a comprehensive presidential strategic report for the authenticated user."""
+        return await generate_presidential_report(str(user_id), db)
     
     @app.get("/presidential/metrics")
-    async def get_metrics(db: Session = Depends(get_db)):
-        """Get key presidential metrics and KPIs."""
-        default_user_id = "6440da7f-e630-4b2f-884e-a8721cc9a9c0"
-        return await get_presidential_metrics(default_user_id, db)
+    async def get_metrics(db: Session = Depends(get_db), user_id: UUID = Depends(get_current_user_id)):
+        """Get key presidential metrics and KPIs for the authenticated user."""
+        return await get_presidential_metrics(str(user_id), db)
     
     @app.post("/presidential/process-existing")
-    async def process_existing_data(db: Session = Depends(get_db)):
-        """Process existing sentiment data with presidential analysis."""
-        default_user_id = "6440da7f-e630-4b2f-884e-a8721cc9a9c0"
-        return await process_existing_data_with_presidential_analysis(default_user_id, db)
+    async def process_existing_data(db: Session = Depends(get_db), user_id: UUID = Depends(get_current_user_id)):
+        """Process existing sentiment data with presidential analysis for the authenticated user."""
+        return await process_existing_data_with_presidential_analysis(str(user_id), db)
     
     @app.post("/presidential/update-latest")
-    async def update_latest_data(db: Session = Depends(get_db)):
-        """Get data from latest-data endpoint and update the 3 existing fields with presidential analysis."""
-        # Use a default user ID for testing
-        default_user_id = "6440da7f-e630-4b2f-884e-a8721cc9a9c0"
-        return await update_latest_data_with_presidential_analysis(default_user_id, db)
+    async def update_latest_data(db: Session = Depends(get_db), user_id: UUID = Depends(get_current_user_id)):
+        """Get data from latest-data endpoint and update the 3 existing fields with presidential analysis for the authenticated user."""
+        return await update_latest_data_with_presidential_analysis(str(user_id), db)
     
     @app.post("/presidential/analyze-records")
     async def analyze_specific_records(record_ids: List[int], db: Session = Depends(get_db)):

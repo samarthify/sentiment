@@ -70,7 +70,9 @@ def collect_news_apify(queries: List[str], output_file=None, language="US:en", s
         language: Language of news to search for (default: "US:en")
         sort_preference: Preferred sort order for actors that support it (default: "relevance")
     """
-    load_dotenv()
+    # Load environment variables from collectors folder
+    env_path = Path(__file__).parent / '.env'
+    load_dotenv(env_path)
     
     # API Key from environment variables
     api_token = os.getenv("APIFY_API_TOKEN")

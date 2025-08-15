@@ -9,13 +9,13 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-# Load environment variables from .env file in the same directory (src/api/.env)
-env_path = Path(__file__).parent / '.env'
+# Load environment variables from .env file in the config directory
+env_path = Path(__file__).parent.parent.parent / 'config' / '.env'
 if env_path.exists():
     load_dotenv(dotenv_path=env_path)
     logger.info(f"Loaded environment variables from {env_path}")
 else:
-    logger.warning(f"API .env file not found at {env_path}. JWT verification might fail.")
+    logger.warning(f"Config .env file not found at {env_path}. JWT verification might fail.")
 
 
 # --- Configuration ---
@@ -24,8 +24,18 @@ ALGORITHM = "HS256"  # Supabase uses HS256 for JWT signing
 
 if not SECRET_KEY:
     logger.error("CRITICAL: SUPABASE_JWT_SECRET environment variable not set. Authentication will fail.")
-    # You might want to raise an exception here to prevent the app from starting without the secret
-    # raise ValueError("SUPABASE_JWT_SECRET is not set.")
+    # Try to load from config/.env if not already loaded
+    from pathlib import Path
+    config_env_path = Path(__file__).parent.parent.parent / "config" / ".env"
+    if config_env_path.exists():
+        load_dotenv(dotenv_path=config_env_path)
+        SECRET_KEY = os.getenv("SUPABASE_JWT_SECRET")
+        if SECRET_KEY:
+            logger.info("Successfully loaded SUPABASE_JWT_SECRET from config/.env")
+        else:
+            logger.error("SUPABASE_JWT_SECRET still not found after loading config/.env")
+    else:
+        logger.error("Config .env file not found. Please create config/.env with SUPABASE_JWT_SECRET")
 
 # --- Reusable Security Scheme ---
 token_scheme = HTTPBearer()
@@ -74,7 +84,10 @@ async def get_current_user_id(credentials: HTTPAuthorizationCredentials = Depend
              # Re-check in case it wasn't loaded initially but is needed now
              logger.error("SUPABASE_JWT_SECRET is missing, cannot verify token.")
              raise credentials_exception
-             
+        
+        logger.info(f"Attempting to decode JWT token with secret length: {len(SECRET_KEY)}")
+        logger.info(f"Token starts with: {token[:20]}... and ends with: ...{token[-20:]}")
+        
         # Decode the JWT token
         payload = jwt.decode(
             token, 

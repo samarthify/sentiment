@@ -17,5 +17,9 @@
     "rate_limits": {
         "twitter": 100,
         "news": 50
+    },
+    "batch_sizes": {
+        "sentiment_analysis": 50,
+        "location_classification": 100
     }
 }

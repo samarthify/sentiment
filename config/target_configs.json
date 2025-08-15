@@ -1,0 +1,120 @@
+{
+  "targets": {
+    "emir": {
+      "name": "Emir of Qatar",
+      "full_name": "Sheikh Tamim bin Hamad Al Thani",
+      "country": "Qatar",
+      "country_code": "qa",
+      "keywords": ["emir", "amir", "sheikh tamim", "al thani", "qatar", "doha", "qatari"],
+      "sources": {
+        "news": {
+          "enabled": true,
+          "countries": ["qa", "us", "gb", "ae", "ng", "in"],
+          "filters": {
+            "must_contain": ["emir", "amir", "sheikh tamim", "al thani"],
+            "exclude": ["fake", "rumor", "unverified"]
+          }
+        },
+        "twitter": {
+          "enabled": true,
+          "keywords": ["emir", "amir", "sheikh tamim", "al thani", "qatar"],
+          "locations": ["Qatar", "Doha", "Gulf", "Middle East"]
+        },
+        "rss": {
+          "enabled": true,
+          "feeds": [
+            "https://www.gulf-times.com/rss.xml",
+            "https://www.thepeninsulaqatar.com/rss.xml",
+            "https://www.qatar-tribune.com/rss.xml"
+          ]
+        },
+        "youtube": {
+          "enabled": true,
+          "channels": ["qatar"],
+          "keywords": ["emir", "amir", "sheikh tamim", "al thani", "qatar", "doha", "qatari"],
+          "max_videos_per_channel": 20,
+          "search_keywords": true
+        },
+        "facebook": {
+          "enabled": true,
+          "keywords": ["emir", "amir", "sheikh tamim", "al thani", "qatar", "doha", "qatari"],
+          "max_posts_per_source": 100,
+          "include_comments": true,
+          "include_reactions": true
+        }
+      },
+      "sentiment_rules": {
+        "positive_keywords": ["diplomatic", "peace", "development", "investment", "partnership"],
+        "negative_keywords": ["controversy", "criticism", "protest", "scandal"],
+        "neutral_keywords": ["meeting", "visit", "announcement", "statement"]
+      }
+    },
+    "tinubu": {
+      "name": "President Bola Tinubu",
+      "full_name": "Bola Ahmed Tinubu",
+      "country": "Nigeria",
+      "country_code": "ng",
+      "keywords": ["bola tinubu", "tinubu", "nigeria", "nigerian", "president", "apc", "lagos", "abuja"],
+      "sources": {
+        "news": {
+          "enabled": true,
+          "countries": ["ng", "us", "gb", "ae", "qa", "in"],
+          "filters": {
+            "must_contain": ["bola tinubu", "tinubu", "nigeria", "nigerian"],
+            "exclude": ["fake", "rumor", "unverified"]
+          }
+        },
+        "twitter": {
+          "enabled": true,
+          "keywords": ["bola tinubu", "tinubu", "nigeria", "nigerian", "president"],
+          "locations": ["Nigeria", "Lagos", "Abuja", "West Africa"]
+        },
+        "rss": {
+          "enabled": true,
+          "feeds": [
+            "https://punchng.com/feed/",
+            "https://guardian.ng/feed/",
+            "https://www.vanguardngr.com/feed/"
+          ]
+        },
+        "youtube": {
+          "enabled": true,
+          "channels": ["nigeria"],
+          "keywords": ["bola tinubu", "tinubu", "nigeria", "nigerian", "president", "apc", "lagos", "abuja"],
+          "max_videos_per_channel": 20,
+          "search_keywords": true
+        },
+        "facebook": {
+          "enabled": true,
+          "keywords": ["bola tinubu", "tinubu", "nigeria", "nigerian", "president", "apc", "lagos", "abuja"],
+          "max_posts_per_source": 100,
+          "include_comments": true,
+          "include_reactions": true
+        }
+      },
+      "sentiment_rules": {
+        "positive_keywords": ["reform", "development", "investment", "growth", "progress"],
+        "negative_keywords": ["corruption", "failure", "protest", "crisis"],
+        "neutral_keywords": ["policy", "announcement", "meeting", "visit"]
+      }
+    }
+  },
+  "default_sources": {
+    "news": true,
+    "twitter": true,
+    "facebook": true,
+    "rss": true,
+    "youtube": true,
+    "reddit": false,
+    "instagram": false,
+    "linkedin": false
+  },
+  "collection_settings": {
+    "interval_minutes": 60,
+    "max_articles_per_source": 100,
+    "duplicate_detection": true,
+    "language_filter": ["en"],
+    "date_range_days": 7
+  }
+}
+

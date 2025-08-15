@@ -19,37 +19,54 @@ const getStartOfMonth = (date) => {
 };
 
 class DataService {
-  async loadData(accessToken) {
+  async loadData(accessToken, user_id = null) {
     const apiUrl = process.env.REACT_APP_API_URL || 'http://localhost:8000'; // Use env var or default
     // Use latest-data endpoint by default for now
     console.log('Using latest-data endpoint by default...');
-    return this.loadDataFromLatestDataEndpoint(apiUrl);
+    return this.loadDataFromLatestDataEndpoint(apiUrl, user_id);
   }
 
-  async loadDataFromLatestDataEndpoint(apiUrl) {
-    const latestDataEndpoint = `${apiUrl}/latest-data`;
-    console.log(`Loading data from latest-data endpoint: ${latestDataEndpoint}`);
+  async loadDataFromLatestDataEndpoint(apiUrl, user_id = null) {
+    let latestDataEndpoint = `${apiUrl}/latest-data`;
+    
+    // Add user_id as query parameter if provided
+    if (user_id) {
+      latestDataEndpoint += `?user_id=${encodeURIComponent(user_id)}`;
+    }
+    
+    console.log(`🔄 DataService: Loading data from latest-data endpoint: ${latestDataEndpoint}`);
     
     try {
-      const response = await fetch(latestDataEndpoint);
+      console.log('📡 DataService: Making fetch request...');
+      const response = await fetch(latestDataEndpoint, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+          'Cache-Control': 'no-cache, no-store, must-revalidate',
+          'Pragma': 'no-cache',
+          'Expires': '0'
+        }
+      });
+      
+      console.log('📡 DataService: Response received:', response.status, response.statusText);
       
       if (!response.ok) {
         throw new Error(`Latest data endpoint failed: ${response.status} ${response.statusText}`);
       }
       
       const apiResult = await response.json();
-      console.log('Latest data endpoint response:', apiResult.status);
+      console.log('✅ DataService: API response received:', apiResult.status, 'Records:', apiResult.data?.length);
       
       if (apiResult.status === 'success' && apiResult.data) {
-        console.log('Latest data endpoint data loaded, records:', apiResult.data.length);
+        console.log('✅ DataService: Processing data...');
         return this.processData(apiResult.data);
       } else {
-        console.error('Latest data endpoint did not return successful status or data:', apiResult);
+        console.error('❌ DataService: API did not return successful status or data:', apiResult);
         return this.processData([]);
       }
       
     } catch (error) {
-      console.error('Error loading data from latest-data endpoint:', error);
+      console.error('❌ DataService: Error loading data:', error);
       return this.processData([]);
     }
   }
@@ -1162,9 +1179,14 @@ class DataService {
   }
 
   // Media Sources Methods
-  async getNewspaperSources(accessToken) {
+  async getNewspaperSources(accessToken, user_id = null) {
     const apiUrl = process.env.REACT_APP_API_URL || 'http://localhost:8000';
-    const endpoint = `${apiUrl}/media-sources/newspapers`;
+    let endpoint = `${apiUrl}/media-sources/newspapers`;
+    
+    // Add user_id as query parameter if provided
+    if (user_id) {
+      endpoint += `?user_id=${encodeURIComponent(user_id)}`;
+    }
     console.log(`Fetching newspaper sources from: ${endpoint}`);
 
     try {
@@ -1201,9 +1223,14 @@ class DataService {
     }
   }
 
-  async getTwitterSources(accessToken) {
+  async getTwitterSources(accessToken, user_id = null) {
     const apiUrl = process.env.REACT_APP_API_URL || 'http://localhost:8000';
-    const endpoint = `${apiUrl}/media-sources/twitter`;
+    let endpoint = `${apiUrl}/media-sources/twitter`;
+    
+    // Add user_id as query parameter if provided
+    if (user_id) {
+      endpoint += `?user_id=${encodeURIComponent(user_id)}`;
+    }
     console.log(`Fetching Twitter sources from: ${endpoint}`);
 
     try {
@@ -1240,9 +1267,14 @@ class DataService {
     }
   }
 
-  async getTelevisionSources(accessToken) {
+  async getTelevisionSources(accessToken, user_id = null) {
     const apiUrl = process.env.REACT_APP_API_URL || 'http://localhost:8000';
-    const endpoint = `${apiUrl}/media-sources/television`;
+    let endpoint = `${apiUrl}/media-sources/television`;
+    
+    // Add user_id as query parameter if provided
+    if (user_id) {
+      endpoint += `?user_id=${encodeURIComponent(user_id)}`;
+    }
     console.log(`Fetching television sources from: ${endpoint}`);
 
     try {
@@ -1275,6 +1307,98 @@ class DataService {
       
     } catch (error) {
       console.error('Error fetching television sources:', error);
+      return [];
+    }
+  }
+
+  async submitSentimentFeedback(recordId, newSentiment, contentType, accessToken) {
+    const apiUrl = process.env.REACT_APP_API_URL || 'http://localhost:8000';
+    const endpoint = `${apiUrl}/sentiment-feedback`;
+    
+    console.log(`Submitting sentiment feedback: ${recordId} -> ${newSentiment} (${contentType})`);
+
+    try {
+      const headers = { 'Content-Type': 'application/json' };
+      // Only add authorization header if accessToken is provided
+      if (accessToken) {
+        headers['Authorization'] = `Bearer ${accessToken}`;
+      }
+
+      const response = await fetch(endpoint, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          record_id: recordId,
+          new_sentiment: newSentiment,
+          content_type: contentType,
+          user_id: 'dashboard_user' // You can make this dynamic based on logged-in user
+        })
+      });
+      
+      if (!response.ok) {
+        let errorBody = `Failed to submit sentiment feedback: ${response.status} ${response.statusText}`;
+        try {
+          const errorJson = await response.json();
+          errorBody = errorJson.message || errorBody;
+        } catch(e) { /* Ignore if not JSON */ }
+        throw new Error(errorBody);
+      }
+      
+      const result = await response.json();
+      
+      if (result.status === 'success') {
+        console.log('Sentiment feedback submitted successfully:', result.data);
+        return result.data;
+      } else {
+        throw new Error(result.message || 'Failed to submit feedback');
+      }
+      
+    } catch (error) {
+      console.error('Error submitting sentiment feedback:', error);
+      throw error;
+    }
+  }
+
+  async getFacebookSources(accessToken, user_id = null) {
+    const apiUrl = process.env.REACT_APP_API_URL || 'http://localhost:8000';
+    let endpoint = `${apiUrl}/media-sources/facebook`;
+    
+    // Add user_id as query parameter if provided
+    if (user_id) {
+      endpoint += `?user_id=${encodeURIComponent(user_id)}`;
+    }
+    console.log(`Fetching Facebook sources from: ${endpoint}`);
+
+    try {
+      const headers = { 'Content-Type': 'application/json' };
+      // Only add authorization header if accessToken is provided
+      if (accessToken) {
+        headers['Authorization'] = `Bearer ${accessToken}`;
+      }
+
+      const response = await fetch(endpoint, { headers });
+      
+      if (!response.ok) {
+        let errorBody = `Failed to fetch Facebook sources: ${response.status} ${response.statusText}`;
+        try {
+          const errorJson = await response.json();
+          errorBody = errorJson.detail || errorBody;
+        } catch(e) { /* Ignore if not JSON */ }
+        throw new Error(errorBody);
+      }
+      
+      const result = await response.json();
+      
+      if (result.status === 'success' && result.data) {
+        console.log('Facebook sources loaded:', result.data.length);
+        return result.data;
+      } else {
+        console.error('API did not return successful status or data:', result);
+        return [];
+      }
+      
+    } catch (error) {
+      console.error('Error fetching Facebook sources:', error);
       return [];
     }
   }

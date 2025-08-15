@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   Card, 
   CardContent, 
@@ -12,7 +12,6 @@ import {
   Paper,
   Box,
   Chip,
-  Avatar,
   Stack,
   Tooltip,
   IconButton,
@@ -22,9 +21,10 @@ import {
   DialogActions,
   Button,
   Link,
-  Divider,
   Grid,
-  styled
+  styled,
+  CircularProgress,
+  Alert
 } from '@mui/material';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
@@ -42,6 +42,8 @@ import {
 } from '@mui/icons-material';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
+import { useAuth } from '../contexts/AuthContext.tsx';
+import DataService from '../services/DataService';
 
 const StyledTableCell = styled(TableCell)(({ theme }) => ({
   borderBottom: `1px solid ${theme.palette.divider}`,
@@ -90,32 +92,67 @@ const StyledTableContainer = styled(TableContainer)(({ theme }) => ({
   },
 }));
 
-const SentimentBadge = styled(Box)(({ theme, sentiment }) => {
-  const getColor = () => {
-    if (sentiment >= 0.6) return '#4caf50';
-    if (sentiment >= 0.3) return '#8bc34a';
-    if (sentiment >= 0) return '#ffeb3b';
-    if (sentiment >= -0.3) return '#ff9800';
-    return '#f44336';
-  };
-
-  return {
-    display: 'inline-flex',
-    alignItems: 'center',
-    padding: '4px 8px',
-    borderRadius: '4px',
-    backgroundColor: `${getColor()}20`,
-    color: getColor(),
-    fontWeight: 600,
-    fontSize: '0.875rem',
-  };
-});
-
-const SentimentTable = ({ data, title = "Sentiment Analysis", type = 'top' }) => {
+const SentimentTable = ({ title = "Sentiment Analysis", type = 'top' }) => {
   const [selectedItem, setSelectedItem] = useState(null);
   const [openDialog, setOpenDialog] = useState(false);
+  const [data, setData] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
   const navigate = useNavigate();
   const { t } = useTranslation();
+  const { user, accessToken, loading: authLoading } = useAuth();
+
+  // Add debugging for authentication state
+  useEffect(() => {
+    console.log('🔍 SentimentTable: Auth state changed:', {
+      userId: user?.id,
+      hasAccessToken: !!accessToken,
+      authLoading,
+      timestamp: new Date().toISOString()
+    });
+  }, [user, accessToken, authLoading]);
+
+  // Direct data fetching using the latest data endpoint
+  useEffect(() => {
+    const fetchData = async () => {
+      // Wait for both user and accessToken to be available
+      if (!user?.id || !accessToken) {
+        console.log('⏳ SentimentTable: Waiting for user and access token...', {
+          userId: user?.id,
+          hasAccessToken: !!accessToken,
+          authLoading,
+          timestamp: new Date().toISOString()
+        });
+        return;
+      }
+
+      try {
+        setLoading(true);
+        setError(null);
+        
+        console.log('🔄 SentimentTable: Starting data fetch for user:', user.id);
+        const fetchedData = await DataService.loadData(accessToken, user.id);
+        
+        console.log('✅ SentimentTable: Data fetched successfully:', {
+          totalRecords: fetchedData.rawData?.length || 0,
+          topSentiment: fetchedData.topSentiment?.length || 0,
+          bottomSentiment: fetchedData.bottomSentiment?.length || 0,
+          userId: user.id,
+          timestamp: new Date().toISOString()
+        });
+        
+        setData(fetchedData);
+      } catch (err) {
+        console.error('❌ SentimentTable: Error fetching data:', err);
+        setError(err.message || 'Failed to fetch data');
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    // Call fetchData whenever user or accessToken changes
+    fetchData();
+  }, [user, accessToken, authLoading]); // Depend on both user and accessToken
 
   const handleRowClick = (item) => {
     setSelectedItem(item);
@@ -185,7 +222,6 @@ const SentimentTable = ({ data, title = "Sentiment Analysis", type = 'top' }) =>
 
   const renderSourceInfo = (item) => {
     const sourceLower = (item.source || '').toLowerCase();
-    const isUserContent = sourceLower.includes('x') || sourceLower.includes('twitter') || sourceLower.includes('social');
     
     return (
       <Stack direction="column" spacing={1} className="source-info">
@@ -523,6 +559,31 @@ const SentimentTable = ({ data, title = "Sentiment Analysis", type = 'top' }) =>
   );
 
   const renderTableData = (data) => {
+    if (loading) {
+      return (
+        <TableRow>
+          <TableCell colSpan={4} align="center">
+            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', py: 3 }}>
+              <CircularProgress size={24} sx={{ mr: 2 }} />
+              <Typography>Loading sentiment data...</Typography>
+            </Box>
+          </TableCell>
+        </TableRow>
+      );
+    }
+
+    if (error) {
+      return (
+        <TableRow>
+          <TableCell colSpan={4} align="center">
+            <Alert severity="error" sx={{ my: 2 }}>
+              Error loading data: {error}
+            </Alert>
+          </TableCell>
+        </TableRow>
+      );
+    }
+
     if (!data || data.length === 0) {
       return (
         <TableRow>
@@ -660,6 +721,57 @@ const SentimentTable = ({ data, title = "Sentiment Analysis", type = 'top' }) =>
 
   const posts = type === 'top' ? data?.topSentiment : data?.bottomSentiment;
   const defaultTitle = type === 'top' ? t('sentimentTable.highestSentiment') : t('sentimentTable.lowestSentiment');
+
+  // Show loading state while authentication is loading
+  if (authLoading) {
+    return (
+      <motion.div
+        initial={{ opacity: 0, scale: 0.95 }}
+        animate={{ opacity: 1, scale: 1 }}
+        transition={{ duration: 0.5, delay: 0.3 }}
+      >
+        <Card sx={{ height: '100%', boxShadow: 3, borderRadius: 2 }}>
+          <CardContent>
+            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+              <Typography variant="h6">
+                {title === "Sentiment Analysis" ? defaultTitle : title}
+              </Typography>
+            </Box>
+            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', py: 4 }}>
+              <CircularProgress size={32} sx={{ mr: 2 }} />
+              <Typography>Waiting for authentication...</Typography>
+            </Box>
+          </CardContent>
+        </Card>
+      </motion.div>
+    );
+  }
+
+  // Show message if not authenticated
+  if (!user?.id || !accessToken) {
+    return (
+      <motion.div
+        initial={{ opacity: 0, scale: 0.95 }}
+        animate={{ opacity: 1, scale: 1 }}
+        transition={{ duration: 0.5, delay: 0.3 }}
+      >
+        <Card sx={{ height: '100%', boxShadow: 3, borderRadius: 2 }}>
+          <CardContent>
+            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+              <Typography variant="h6">
+                {title === "Sentiment Analysis" ? defaultTitle : title}
+              </Typography>
+            </Box>
+            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', py: 4 }}>
+              <Alert severity="warning">
+                Authentication required to load sentiment data
+              </Alert>
+            </Box>
+          </CardContent>
+        </Card>
+      </motion.div>
+    );
+  }
 
   return (
     <motion.div

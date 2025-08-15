@@ -7,6 +7,7 @@ import requests
 import json
 from typing import Dict, List, Tuple, Optional, Any
 import pandas as pd
+from dotenv import load_dotenv
 
 # Configure logging
 logging.basicConfig(
@@ -26,6 +27,14 @@ class PresidentialSentimentAnalyzer:
     def __init__(self, president_name: str = "the President", country: str = "Nigeria"):
         self.president_name = president_name
         self.country = country
+        
+        # Load environment variables from config/.env
+        config_env_path = Path(__file__).parent.parent.parent / "config" / ".env"
+        if config_env_path.exists():
+            load_dotenv(config_env_path)
+            logger.info(f"Loaded environment variables from {config_env_path}")
+        else:
+            logger.warning(f"Config .env file not found at {config_env_path}")
         
         # Presidential sentiment categories (using traditional labels with strategic reasoning)
         self.sentiment_categories = {

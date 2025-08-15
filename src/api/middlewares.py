@@ -72,6 +72,15 @@ class UsageTrackingMiddleware(BaseHTTPMiddleware):
             # Get JWT secret from environment
             secret_key = os.getenv("SUPABASE_JWT_SECRET")
             if not secret_key:
+                # Try to load from config/.env if not already loaded
+                from dotenv import load_dotenv
+                from pathlib import Path
+                config_env_path = Path(__file__).parent.parent.parent / "config" / ".env"
+                if config_env_path.exists():
+                    load_dotenv(dotenv_path=config_env_path)
+                    secret_key = os.getenv("SUPABASE_JWT_SECRET")
+                
+            if not secret_key:
                 logger.error("SUPABASE_JWT_SECRET not set, cannot decode token")
                 return None
             

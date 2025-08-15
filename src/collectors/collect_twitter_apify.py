@@ -35,7 +35,9 @@ def collect_twitter_apify(queries: List[str], output_file=None, max_items=200, q
         query_type: Type of query to run (default: "Latest")
         language: Language of tweets to search for (default: "en")
     """
-    load_dotenv()
+    # Load environment variables from collectors folder
+    env_path = Path(__file__).parent / '.env'
+    load_dotenv(env_path)
     
     # API Key from environment variables
     api_token = os.getenv("APIFY_API_TOKEN")

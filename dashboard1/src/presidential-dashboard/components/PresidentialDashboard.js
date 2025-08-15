@@ -34,6 +34,7 @@ import {
   Info,
   Twitter as TwitterIcon,
   Tv as TvIcon,
+  Facebook as FacebookIcon,
   LocationOn as LocationIcon,
   Summarize as SummarizeIcon,
   Psychology as PsychologyIcon
@@ -48,10 +49,11 @@ import MediaBiasTracker from './MediaBiasTracker';
 import TopNewspapers from './TopNewspapers';
 import TopTelevision from './TopTelevision';
 import TopTwitter from './TopTwitter';
+import TopFacebook from './TopFacebook';
 import MediaSourcesOverview from './MediaSourcesOverview';
 
 import ContextualSentimentAnalysis from './ContextualSentimentAnalysis';
-import GeographicalDistribution from './GeographicalDistribution';
+// import GeographicalDistribution from './GeographicalDistribution'; // Removed - not being used
 import AutoSummary from '../../components/AutoSummary';
 import EmotionalSpectrum from '../../components/EmotionalSpectrum';
 
@@ -68,7 +70,7 @@ const PresidentialDashboard = ({ userRole = 'president' }) => {
   const { t } = useTranslation();
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('md'));
-  const { accessToken } = useAuth();
+  const { accessToken, user } = useAuth();
   
   const [activeTab, setActiveTab] = useState(0);
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -78,13 +80,31 @@ const PresidentialDashboard = ({ userRole = 'president' }) => {
   const [alerts, setAlerts] = useState([]);
   const [showAlert, setShowAlert] = useState(false);
 
+  // Centralized data state
+  const [mediaData, setMediaData] = useState({
+    newspapers: [],
+    television: [],
+    twitter: [],
+    facebook: []
+  });
+
   useEffect(() => {
-    // Load real data from the data service
-    const loadPresidentialData = async () => {
+    console.log('🔄 PresidentialDashboard useEffect triggered!', {
+      accessToken: accessToken ? 'Present' : 'Missing',
+      timestamp: new Date().toISOString(),
+      componentId: Math.random().toString(36).substr(2, 9)
+    });
+
+    // Load ALL data once when component mounts
+    const loadAllData = async () => {
       try {
         setLoading(true);
+        console.log('🔄 Loading all data for presidential dashboard...');
         
-        const processedData = await DataService.loadData(accessToken);
+        // Load main sentiment data with user ID for target individual filtering
+        const userId = user?.id;
+        const processedData = await DataService.loadData(accessToken, userId);
+        console.log('✅ Main data loaded for user:', userId);
         
         // Store original data for AI components
         setOriginalData(processedData);
@@ -93,6 +113,8 @@ const PresidentialDashboard = ({ userRole = 'president' }) => {
         const presidentialData = transformToPresidentialFormat(processedData);
         setData(presidentialData);
         
+        // Media sources data will be processed from filtered data instead of API calls
+        
         // Set initial alerts from the data
         if (presidentialData.alerts && presidentialData.alerts.length > 0) {
           setAlerts(presidentialData.alerts);
@@ -100,8 +122,10 @@ const PresidentialDashboard = ({ userRole = 'president' }) => {
             setShowAlert(true);
           }
         }
+        
+        console.log('🎉 All data loaded successfully!');
       } catch (error) {
-        console.error('Error loading presidential data:', error);
+        console.error('❌ Error loading data:', error);
         // Set default data on error
         setData({
           total_mentions: 0,
@@ -117,17 +141,24 @@ const PresidentialDashboard = ({ userRole = 'president' }) => {
     };
 
     if (accessToken) {
-      loadPresidentialData();
+      console.log('🔑 Access token found, calling loadAllData...');
+      loadAllData();
+    } else {
+      console.log('❌ No access token, skipping data load');
     }
 
     // Set up periodic data refresh (every 5 minutes)
     const refreshInterval = setInterval(() => {
       if (accessToken) {
-        loadPresidentialData();
+        console.log('⏰ Periodic refresh triggered...');
+        loadAllData();
       }
     }, 5 * 60 * 1000);
 
-    return () => clearInterval(refreshInterval);
+    return () => {
+      console.log('🧹 Cleaning up useEffect...');
+      clearInterval(refreshInterval);
+    };
   }, [accessToken]);
 
   const transformToPresidentialFormat = (processedData) => {
@@ -256,16 +287,24 @@ const PresidentialDashboard = ({ userRole = 'president' }) => {
   };
 
   const handleRefresh = async () => {
+    console.log('🔄 Refresh button clicked! Starting refresh...');
     try {
       setLoading(true);
+      console.log('📡 Refreshing all data...');
       
-      const processedData = await DataService.loadData(accessToken);
+      // Refresh main sentiment data with user ID for target individual filtering
+      const userId = user?.id;
+      const processedData = await DataService.loadData(accessToken, userId);
+      console.log('✅ Main data refreshed for user:', userId);
       
       // Store original data for AI components
       setOriginalData(processedData);
       
       const presidentialData = transformToPresidentialFormat(processedData);
+      console.log('🔄 Transformed data:', presidentialData);
       setData(presidentialData);
+      
+      // Media sources data will be processed from filtered data instead of API calls
       
       // Update alerts from the refreshed data
       if (presidentialData.alerts && presidentialData.alerts.length > 0) {
@@ -274,10 +313,13 @@ const PresidentialDashboard = ({ userRole = 'president' }) => {
           setShowAlert(true);
         }
       }
+      
+      console.log('✅ All data refresh completed successfully!');
     } catch (error) {
-      console.error('Error refreshing presidential data:', error);
+      console.error('❌ Error refreshing data:', error);
     } finally {
       setLoading(false);
+      console.log('🏁 Loading state set to false');
     }
   };
 
@@ -316,17 +358,22 @@ const PresidentialDashboard = ({ userRole = 'president' }) => {
         {
           label: 'Top Newspapers',
           icon: <NewspaperIcon />,
-          component: <TopNewspapers />
+          component: <TopNewspapers data={data} loading={loading} />
         },
         {
           label: 'Top Television',
           icon: <TvIcon />,
-          component: <TopTelevision />
+          component: <TopTelevision data={data} loading={loading} />
         },
         {
           label: 'Top Twitter',
           icon: <TwitterIcon />,
-          component: <TopTwitter />
+          component: <TopTwitter data={data} loading={loading} />
+        },
+        {
+          label: 'Top Facebook',
+          icon: <FacebookIcon />,
+          component: <TopFacebook data={data} loading={loading} />
         },
         {
           label: 'Media Bias',
@@ -356,17 +403,22 @@ const PresidentialDashboard = ({ userRole = 'president' }) => {
         {
           label: 'Top Newspapers',
           icon: <NewspaperIcon />,
-          component: <TopNewspapers />
+          component: <TopNewspapers data={data} loading={loading} />
         },
         {
           label: 'Top Television',
           icon: <TvIcon />,
-          component: <TopTelevision />
+          component: <TopTelevision data={data} loading={loading} />
         },
         {
           label: 'Top Twitter',
           icon: <TwitterIcon />,
-          component: <TopTwitter />
+          component: <TopTwitter data={data} loading={loading} />
+        },
+        {
+          label: 'Top Facebook',
+          icon: <FacebookIcon />,
+          component: <TopFacebook data={data} loading={loading} />
         },
         {
           label: 'Media Bias',
@@ -383,11 +435,12 @@ const PresidentialDashboard = ({ userRole = 'president' }) => {
           icon: <PolicyIcon />,
           component: <ContextualSentimentAnalysis data={data} userRole={userRole} />
         },
-        {
-          label: 'Geographical Impact',
-          icon: <LocationIcon />,
-          component: <GeographicalDistribution data={data} userRole={userRole} />
-        }
+        // Removed GeographicalDistribution component as it's not being used
+        // {
+        //   label: 'Geographical Impact',
+        //   icon: <LocationIcon />,
+        //   component: <GeographicalDistribution data={data} userRole={userRole} />
+        // }
       );
     }
 

@@ -80,7 +80,25 @@ const PolicyImpactTracker = ({ data, loading }) => {
       peak_negative: -0.85,
       recovery_rate: 0.15,
       media_coverage: 1250,
-      public_reaction: 'high_negative'
+      public_reaction: 'high_negative',
+      mentions: [
+        {
+          date: '2023-05-30',
+          sentiment_score: -0.8,
+          sentiment_label: 'negative',
+          source: 'Channels TV',
+          platform: 'TV',
+          text: 'Citizens express frustration over fuel subsidy removal and its immediate impact on transportation costs.'
+        },
+        {
+          date: '2023-05-29',
+          sentiment_score: -0.7,
+          sentiment_label: 'negative',
+          source: 'The Guardian Nigeria',
+          platform: 'News',
+          text: 'Fuel subsidy removal announced by President, causing immediate price increases at filling stations.'
+        }
+      ]
     },
     {
       id: 'exchange_rate',
@@ -93,7 +111,17 @@ const PolicyImpactTracker = ({ data, loading }) => {
       peak_negative: -0.75,
       recovery_rate: 0.3,
       media_coverage: 890,
-      public_reaction: 'moderate_negative'
+      public_reaction: 'moderate_negative',
+      mentions: [
+        {
+          date: '2023-06-15',
+          sentiment_score: -0.6,
+          sentiment_label: 'negative',
+          source: 'BusinessDay',
+          platform: 'News',
+          text: 'New exchange rate policy creates uncertainty in foreign exchange markets.'
+        }
+      ]
     },
     {
       id: 'security_measures',
@@ -106,7 +134,17 @@ const PolicyImpactTracker = ({ data, loading }) => {
       peak_positive: 0.45,
       recovery_rate: 0.1,
       media_coverage: 650,
-      public_reaction: 'positive'
+      public_reaction: 'positive',
+      mentions: [
+        {
+          date: '2023-07-02',
+          sentiment_score: 0.7,
+          sentiment_label: 'positive',
+          source: 'TVC News',
+          platform: 'TV',
+          text: 'Citizens welcome new security measures announced by the government to combat insecurity.'
+        }
+      ]
     },
     {
       id: 'economic_reforms',
@@ -119,7 +157,17 @@ const PolicyImpactTracker = ({ data, loading }) => {
       peak_negative: -0.5,
       recovery_rate: 0.25,
       media_coverage: 450,
-      public_reaction: 'mixed'
+      public_reaction: 'mixed',
+      mentions: [
+        {
+          date: '2023-08-16',
+          sentiment_score: 0.1,
+          sentiment_label: 'neutral',
+          source: 'Premium Times',
+          platform: 'News',
+          text: 'Economic reforms package includes various measures to improve the economic situation.'
+        }
+      ]
     }
   ];
 
@@ -334,7 +382,7 @@ const PolicyImpactTracker = ({ data, loading }) => {
   const getSentimentColor = (sentiment) => {
     if (sentiment >= 0.5) return 'success';
     if (sentiment >= 0.1) return 'info';
-    if (sentiment >= -0.1) return 'default';
+    if (sentiment >= -0.1) return 'primary';
     if (sentiment >= -0.5) return 'warning';
     return 'error';
   };
@@ -466,10 +514,10 @@ const PolicyImpactTracker = ({ data, loading }) => {
 
       {policies.length === 0 ? (
         <Box sx={{ textAlign: 'center', py: 4 }}>
-          <Typography variant="h6" color="text.secondary">
+                            <Typography variant="h6" color="textSecondary">
             No policy data available
           </Typography>
-          <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+          <Typography variant="body2" color="textSecondary" sx={{ mt: 1 }}>
             Run sentiment analysis to see policy impact data
           </Typography>
         </Box>
@@ -496,7 +544,7 @@ const PolicyImpactTracker = ({ data, loading }) => {
                         <Typography variant="h6" fontWeight="bold">
                           {policy.name}
                         </Typography>
-                        <Typography variant="body2" color="text.secondary">
+                        <Typography variant="body2" color="textSecondary">
                           Announced: {formatDate(policy.announcement_date)}
                         </Typography>
                       </Box>
@@ -526,7 +574,7 @@ const PolicyImpactTracker = ({ data, loading }) => {
 
                     <Grid container spacing={2} mb={2}>
                       <Grid item xs={6}>
-                        <Typography variant="body2" color="text.secondary">
+                        <Typography variant="body2" color="textSecondary">
                           Pre-Announcement
                         </Typography>
                         <Typography variant="h6" color={getSentimentColor(policy.pre_announcement)}>
@@ -534,7 +582,7 @@ const PolicyImpactTracker = ({ data, loading }) => {
                         </Typography>
                       </Grid>
                       <Grid item xs={6}>
-                        <Typography variant="body2" color="text.secondary">
+                        <Typography variant="body2" color="textSecondary">
                           Post-Announcement
                         </Typography>
                         <Typography variant="h6" color={getSentimentColor(policy.post_announcement)}>
@@ -587,7 +635,7 @@ const PolicyImpactTracker = ({ data, loading }) => {
                       >
                         <Divider sx={{ my: 2 }} />
                         <Box>
-                          <Typography variant="body2" color="text.secondary" mb={1}>
+                          <Typography variant="body2" color="textSecondary" mb={1}>
                             Recovery Progress
                           </Typography>
                           <LinearProgress
@@ -596,7 +644,7 @@ const PolicyImpactTracker = ({ data, loading }) => {
                             color="success"
                             sx={{ height: 6, borderRadius: 3 }}
                           />
-                          <Typography variant="caption" color="text.secondary">
+                          <Typography variant="caption" color="textSecondary">
                             {calculateRecoveryProgress(policy).toFixed(1)}% recovered
                           </Typography>
                         </Box>
@@ -700,7 +748,7 @@ const PolicyImpactTracker = ({ data, loading }) => {
                         {selectedPolicy.public_reaction.replace('_', ' ').toUpperCase()}
                       </Typography>
                     </Box>
-                    <Typography variant="body2" color="text.secondary">
+                    <Typography variant="body2" color="textSecondary">
                       Based on {selectedPolicy.media_coverage} media mentions and social media analysis
                     </Typography>
                   </Paper>
@@ -777,30 +825,30 @@ const PolicyImpactTracker = ({ data, loading }) => {
                       <>
                         <Grid item xs={4}>
                           <Box textAlign="center">
-                            <Typography variant="h4" color="success.main" fontWeight={700}>
+                            <Typography variant="h4" color="success" fontWeight={700}>
                               {positiveCount}
                             </Typography>
-                            <Typography variant="body2" color="text.secondary">
+                            <Typography variant="body2" color="textSecondary">
                               Positive ({((positiveCount / total) * 100).toFixed(1)}%)
                             </Typography>
                           </Box>
                         </Grid>
                         <Grid item xs={4}>
                           <Box textAlign="center">
-                            <Typography variant="h4" color="error.main" fontWeight={700}>
+                            <Typography variant="h4" color="error" fontWeight={700}>
                               {negativeCount}
                             </Typography>
-                            <Typography variant="body2" color="text.secondary">
+                            <Typography variant="body2" color="textSecondary">
                               Negative ({((negativeCount / total) * 100).toFixed(1)}%)
                             </Typography>
                           </Box>
                         </Grid>
                         <Grid item xs={4}>
                           <Box textAlign="center">
-                            <Typography variant="h4" color="primary.main" fontWeight={700}>
+                            <Typography variant="h4" color="primary" fontWeight={700}>
                               {neutralCount}
                             </Typography>
-                            <Typography variant="body2" color="text.secondary">
+                            <Typography variant="body2" color="textSecondary">
                               Neutral ({((neutralCount / total) * 100).toFixed(1)}%)
                             </Typography>
                           </Box>
@@ -810,7 +858,7 @@ const PolicyImpactTracker = ({ data, loading }) => {
                   })()}
                 </Grid>
                 <Box mt={2}>
-                  <Typography variant="body2" color="text.secondary">
+                  <Typography variant="body2" color="textSecondary">
                     Average Sentiment Score: {
                       (selectedPolicyMentions.reduce((sum, m) => sum + (m.sentiment_score || 0), 0) / selectedPolicyMentions.length).toFixed(3)
                     }
@@ -818,7 +866,7 @@ const PolicyImpactTracker = ({ data, loading }) => {
                 </Box>
               </Box>
               
-              <Typography variant="body2" color="text.secondary" mb={3}>
+              <Typography variant="body2" color="textSecondary" mb={3}>
                 Showing {selectedPolicyMentions.length} mentions related to this policy
               </Typography>
               <Grid container spacing={2}>
@@ -841,7 +889,7 @@ const PolicyImpactTracker = ({ data, loading }) => {
                           <Typography variant="subtitle2" fontWeight={600}>
                             {mention.source} - {mention.platform}
                           </Typography>
-                          <Typography variant="caption" color="text.secondary">
+                          <Typography variant="caption" color="textSecondary">
                             {formatDate(mention.date)}
                           </Typography>
                         </Box>
@@ -894,7 +942,7 @@ const PolicyImpactTracker = ({ data, loading }) => {
                       {mention.sentiment_score !== undefined && (
                         <Box mt={2}>
                           <Box display="flex" justifyContent="space-between" alignItems="center" mb={1}>
-                            <Typography variant="caption" color="text.secondary" fontWeight={600}>
+                            <Typography variant="caption" color="textSecondary" fontWeight={600}>
                               Sentiment Intensity
                             </Typography>
                             <Typography variant="caption" fontWeight={600}>
@@ -937,7 +985,7 @@ const PolicyImpactTracker = ({ data, loading }) => {
               }}>
                 No mentions available
               </Typography>
-              <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+                                <Typography variant="body2" color="textSecondary" sx={{ mt: 1 }}>
                 No detailed mention data is available for this policy
               </Typography>
             </Box>

@@ -71,6 +71,9 @@ const theme = createTheme({
     mode: 'light',
     primary: {
       main: '#1a2035',
+      light: '#4a5568',
+      dark: '#0f1419',
+      contrastText: '#ffffff',
     },
     secondary: {
       main: '#f50057',
@@ -78,6 +81,36 @@ const theme = createTheme({
     background: {
       default: '#f4f6f8',
       paper: '#ffffff',
+    },
+    // Add missing colors to fix PolicyImpactTracker errors
+    success: {
+      main: '#4caf50',
+      light: '#81c784',
+      dark: '#388e3c',
+      contrastText: '#ffffff',
+    },
+    error: {
+      main: '#f44336',
+      light: '#e57373',
+      dark: '#d32f2f',
+      contrastText: '#ffffff',
+    },
+    warning: {
+      main: '#ff9800',
+      light: '#ffb74d',
+      dark: '#f57c00',
+      contrastText: '#ffffff',
+    },
+    info: {
+      main: '#2196f3',
+      light: '#64b5f6',
+      dark: '#1976d2',
+      contrastText: '#ffffff',
+    },
+    text: {
+      primary: '#000000',
+      secondary: '#666666',
+      disabled: '#999999',
     },
   },
   typography: {
@@ -248,22 +281,37 @@ function App() {
   }, [isMobile]);
   
   useEffect(() => {
-    if (!session) {
-       return;
-    } 
+    // Wait for both user and accessToken to be available before loading data
     const fetchData = async () => {
+      if (!user?.id || !session?.access_token) {
+        console.log('⏳ App: Waiting for user and access token...', { 
+          userId: user?.id, 
+          hasAccessToken: !!session?.access_token 
+        });
+        return;
+      }
+
       try {
-        const result = await DataService.loadData(session.access_token);
-        console.log('Data loaded:', result);
+        console.log('🔄 App: Loading data for user:', user.id);
+        
+        // Pass both accessToken and user.id for proper authentication and filtering
+        const result = await DataService.loadData(session.access_token, user.id);
+        console.log('✅ App: Data loaded successfully:', {
+          totalRecords: result.rawData?.length || 0,
+          userId: user.id
+        });
+        
         setData(result);
         setFilteredData(result);
       } catch (error) {
-        console.error('Error loading data:', error);
+        console.error('❌ App: Error loading data:', error);
+        // Don't set error state, just log it
       }
     };
     
+    // Call fetchData whenever user or accessToken changes
     fetchData();
-  }, [session, selectedCountry, timeRange]);
+  }, [user, session?.access_token]); // Depend on both user and accessToken
   
   // Apply filters when selected country or time range changes
   useEffect(() => {

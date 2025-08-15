@@ -7,7 +7,7 @@ import re
 import logging
 import sys
 from pathlib import Path
-from .sentiment_analyzer import ImprovedSentimentAnalyzer
+from .presidential_sentiment_analyzer import PresidentialSentimentAnalyzer
 from dateutil import parser
 from difflib import SequenceMatcher
 from typing import Optional
@@ -28,8 +28,8 @@ class DataProcessor:
         logger.debug("DataProcessor.__init__: Initializing...")
         self.base_path = Path(__file__).parent.parent.parent
         logger.debug(f"DataProcessor.__init__: Base path set to {self.base_path}")
-        logger.debug("DataProcessor.__init__: Initializing ImprovedSentimentAnalyzer...")
-        self.sentiment_analyzer = ImprovedSentimentAnalyzer()
+        logger.debug("DataProcessor.__init__: Initializing PresidentialSentimentAnalyzer...")
+        self.sentiment_analyzer = PresidentialSentimentAnalyzer()
         random.seed(42)  # For consistent random values
         logger.debug("DataProcessor.__init__: Initialization finished.")
 
@@ -736,8 +736,8 @@ class DataProcessor:
                         sentiment_results = self.sentiment_analyzer.batch_analyze(texts_to_analyze)
                         logger.debug(f"DataProcessor.process_files: Batch sentiment analysis completed. Got {len(sentiment_results)} results.")
                         if len(sentiment_results) == len(df):
-                             df['sentiment_label'] = [res[0] for res in sentiment_results]
-                             df['sentiment_score'] = [res[1] for res in sentiment_results]
+                             df['sentiment_label'] = [res['sentiment_label'] for res in sentiment_results]
+                             df['sentiment_score'] = [res['sentiment_score'] for res in sentiment_results]
                              logger.debug("DataProcessor.process_files: Added sentiment columns to DataFrame.")
                         else:
                             logger.warning(f"Sentiment results count ({len(sentiment_results)}) doesn't match DataFrame rows ({len(df)}). Skipping sentiment assignment for {file_path}.")

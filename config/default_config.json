@@ -14,20 +14,5 @@
         "social_searcher": true,
         "instagram": false,
         "linkedin": false
-    },
-    "target": {
-        "individual_name": "Bola Tinubu",
-        "query_variations": [
-            "Bola Tinubu",
-            "President Tinubu",
-            "Nigerian President",
-            "Tinubu Nigeria",
-            "President Bola Tinubu",
-            "Nigerian leader",
-            "Nigeria president",
-            "Tinubu administration",
-            "Nigerian government",
-            "President of Nigeria"
-        ]
     }
 }

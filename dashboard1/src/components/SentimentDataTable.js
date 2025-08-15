@@ -40,11 +40,15 @@ import {
 } from '@mui/icons-material';
 import Papa from 'papaparse';
 
-const SentimentDataTable = ({ data: rawData, initialSentimentFilter = null, initialSourceFilter = null, initialDateFilter = null, initialCountryFilter = null, initialTextFilter = null, initialSearchTerm = null }) => {
+const SentimentDataTable = ({ data: rawData, initialSentimentFilter = null, initialSourceFilter = null, initialDateFilter = null, initialCountryFilter = null, initialTextFilter = null, initialSearchTerm = null, initialAuthorFilter = null }) => {
   const { t } = useTranslation();
   const [page, setPage] = useState(0);
   const [rowsPerPage, setRowsPerPage] = useState(10);
   const [searchTerm, setSearchTerm] = useState(initialSearchTerm || '');
+  // Remove @ symbol from initialAuthorFilter when setting the state
+  const [authorFilter, setAuthorFilter] = useState(
+    initialAuthorFilter ? initialAuthorFilter.replace(/@/g, '') : ''
+  );
   const [filteredData, setFilteredData] = useState([]);
   const [selectedRow, setSelectedRow] = useState(null);
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -107,7 +111,7 @@ const SentimentDataTable = ({ data: rawData, initialSentimentFilter = null, init
   }, [rawData, t]);
 
   useEffect(() => {
-    if (searchTerm || sentimentFilter || sourceFilter || dateFilter || countryFilter || textFilter) {
+    if (searchTerm || authorFilter || sentimentFilter || sourceFilter || dateFilter || countryFilter || textFilter) {
       const filtered = processedData.filter(item => {
         // Apply sentiment filter if it exists
         if (sentimentFilter && item.sentiment && 
@@ -118,8 +122,7 @@ const SentimentDataTable = ({ data: rawData, initialSentimentFilter = null, init
         // Apply source/platform filter if it exists
         if (sourceFilter && 
             !(item.source?.toLowerCase().includes(sourceFilter.toLowerCase()) || 
-              item.platform?.toLowerCase().includes(sourceFilter.toLowerCase()) ||
-              item.author?.toLowerCase().includes(sourceFilter.toLowerCase()))) {
+              item.platform?.toLowerCase().includes(sourceFilter.toLowerCase()))) {
           return false;
         }
         
@@ -154,8 +157,19 @@ const SentimentDataTable = ({ data: rawData, initialSentimentFilter = null, init
           }
         }
         
-        // Then apply search term if it exists
-        if (searchTerm) {
+        // Apply author filter if it exists (prioritize author filtering)
+        if (authorFilter && item.author) {
+          const authorLower = item.author.toLowerCase();
+          const filterLower = authorFilter.toLowerCase();
+          
+          // Check if author name contains the filter term
+          if (!authorLower.includes(filterLower)) {
+            return false;
+          }
+        }
+        
+        // Only apply general search term if author filter is NOT active
+        if (searchTerm && !authorFilter) {
           return (item.content && item.content.toLowerCase().includes(searchTerm.toLowerCase())) ||
             (item.author && item.author.toLowerCase().includes(searchTerm.toLowerCase())) ||
             (item.source && item.source.toLowerCase().includes(searchTerm.toLowerCase())) ||
@@ -169,7 +183,7 @@ const SentimentDataTable = ({ data: rawData, initialSentimentFilter = null, init
     } else {
       setFilteredData(processedData);
     }
-  }, [searchTerm, processedData, sentimentFilter, sourceFilter, dateFilter, countryFilter, textFilter]);
+  }, [searchTerm, authorFilter, processedData, sentimentFilter, sourceFilter, dateFilter, countryFilter, textFilter]);
 
   const handleChangePage = (event, newPage) => {
     setPage(newPage);
@@ -210,6 +224,8 @@ const SentimentDataTable = ({ data: rawData, initialSentimentFilter = null, init
     setDateFilter(null);
     setCountryFilter(null);
     setTextFilter(null);
+    setAuthorFilter(''); // Clear author filter
+    setSearchTerm(''); // Clear search term
   };
 
   const clearSentimentFilter = () => {
@@ -230,6 +246,10 @@ const SentimentDataTable = ({ data: rawData, initialSentimentFilter = null, init
 
   const clearTextFilter = () => {
     setTextFilter(null);
+  };
+
+  const clearAuthorFilter = () => {
+    setAuthorFilter('');
   };
 
   const handleFilterButtonClick = () => {
@@ -288,7 +308,7 @@ const SentimentDataTable = ({ data: rawData, initialSentimentFilter = null, init
           </Typography>
           
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
-            {(sentimentFilter || sourceFilter || dateFilter || countryFilter || textFilter) && (
+            {(sentimentFilter || sourceFilter || dateFilter || countryFilter || textFilter || authorFilter) && (
               <Chip 
                 label={t('sentimentTable.clearAllFilters')}
                 color="default"
@@ -380,9 +400,24 @@ const SentimentDataTable = ({ data: rawData, initialSentimentFilter = null, init
               />
             )}
             
+            {authorFilter && (
+              <Chip 
+                label={`${t('sentimentTable.author')}: ${authorFilter}`}
+                color="secondary"
+                onDelete={clearAuthorFilter}
+                size="small"
+                sx={{ 
+                  fontWeight: 500,
+                  background: 'linear-gradient(135deg, rgba(168, 85, 247, 0.1) 0%, rgba(99, 102, 241, 0.1) 100%)',
+                  backdropFilter: 'blur(10px)',
+                  border: '1px solid rgba(168, 85, 247, 0.2)'
+                }}
+              />
+            )}
+            
             <TextField
               size="small"
-              placeholder={t('sentimentTable.search')}
+              placeholder={authorFilter ? t('sentimentTable.searchInContent') : t('sentimentTable.search')}
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               InputProps={{
@@ -397,7 +432,7 @@ const SentimentDataTable = ({ data: rawData, initialSentimentFilter = null, init
                       size="small"
                       onClick={handleFilterButtonClick}
                       sx={{ 
-                        color: (sentimentFilter || sourceFilter || dateFilter || countryFilter || textFilter) 
+                        color: (sentimentFilter || sourceFilter || dateFilter || countryFilter || textFilter || authorFilter) 
                           ? 'primary.main' 
                           : 'text.secondary'
                       }}
@@ -417,7 +452,7 @@ const SentimentDataTable = ({ data: rawData, initialSentimentFilter = null, init
                   '&:hover': {
                     border: '1px solid rgba(99, 102, 241, 0.3)',
                   },
-                  '&.Mui-focused': {
+                  '&:focus-within': {
                     border: '1px solid rgba(99, 102, 241, 0.5)',
                     boxShadow: '0 0 0 2px rgba(99, 102, 241, 0.1)',
                   }

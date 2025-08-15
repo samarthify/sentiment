@@ -4,8 +4,6 @@ from datetime import datetime
 from pathlib import Path
 import logging
 from typing import List, Dict, Any
-# Remove the old import that doesn't exist
-# from query_variations import query_variations
 import time
 from urllib.parse import quote
 import re
@@ -30,7 +28,7 @@ warnings.filterwarnings('ignore', category=InsecureRequestWarning)
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-class RSSFeedCollector:
+class NigerianQatarIndianRSSCollector:
     def __init__(self, custom_queries=None):
         self.base_path = Path(__file__).parent.parent.parent
         
@@ -56,117 +54,52 @@ class RSSFeedCollector:
         self.failed_sources = set()
         self.source_failures = {}  # Track number of failures per source
         
-        # Updated RSS feeds with corrected URLs and alternative endpoints
+        # RSS feeds for Nigerian, Qatar, and Indian news sources
         self.rss_feeds = [
-            # Qatar News
-            "https://www.gulf-times.com/rss/feed",
-            "https://www.thepeninsulaqatar.com/rss/feed",
-            "https://dohanews.co/feed",
-            "https://www.qna.org.qa/en/rss",
-            "https://www.lusailnews.net/rss",
-            "https://alarab.qa/rss",
-            "https://al-watan.com/feed",
-            
-            # Major Middle East News
-            "https://www.aljazeera.com/xml/rss/all.xml",
-            "https://english.alarabiya.net/feed/rss",
-            "https://arab.news/rss",
-            "https://gulfnews.com/rss/latest",
-            "https://www.khaleejtimes.com/rss-feed",
-            "https://www.thenationalnews.com/world/rss",
-            "https://english.aawsat.com/feed",
-            "https://www.middleeastmonitor.com/feed",
-            "https://english.alaraby.co.uk/rss.xml",
-            
-            # UK News
-            "https://feeds.bbci.co.uk/news/world/middle_east/rss.xml",
-            "https://www.theguardian.com/world/middleeast/rss",
-            "https://www.independent.co.uk/news/world/middle-east/rss",
-            "https://www.telegraph.co.uk/rss.xml",
-            "https://www.dailymail.co.uk/news/worldnews/index.rss",
-            
-            # US News
-            "http://rss.cnn.com/rss/edition_meast.rss",
-            "http://rss.cnn.com/rss/cnn_topstories.rss",
-            "https://feeds.npr.org/1001/rss.xml",
-            "https://www.latimes.com/world/middleeast/rss2.0.xml",
-            "https://www.washingtontimes.com/rss/headlines/news/world",
-            
-            # Business and Politics
-            "https://feeds.bloomberg.com/markets/news.rss",
-            "https://www.ft.com/world/mideast/rss",
-            "https://www.economist.com/middle-east-and-africa/rss.xml",
-            "https://www.cnbc.com/id/100727362/device/rss/rss.html",
-            "https://www.marketwatch.com/rss/topstories",
-            
-            # Think Tanks and Policy
-            "https://www.atlanticcouncil.org/feed",
-            "https://www.csis.org/feed/reports",
-            
-            # Energy News
-            "https://www.rigzone.com/news/rss",
-            "https://oilprice.com/rss/main",
-            
-            # Additional International News
-            "https://www.reuters.com/rssfeed/world/",
-            "https://feeds.skynews.com/feeds/rss/world.xml",
-            "https://www.dw.com/en/top-stories/rss-topstories/s-9097",
-            "https://www.france24.com/en/middle-east/rss",
-            "https://rss.nytimes.com/services/xml/rss/nyt/World.xml",
-            "https://www.voanews.com/api/zt$ityeq_wql",
-            "https://www3.nhk.or.jp/nhkworld/en/news/rss/",
-            "https://www.straitstimes.com/rss/world/feed.xml",
-            
-            # Technology News
-            "https://feeds.feedburner.com/TechCrunch",
-            "https://www.wired.com/feed/rss",
-            "https://www.theverge.com/rss/index.xml",
-            "https://rss.slashdot.org/Slashdot/slashdotMain",
-            "https://www.cnet.com/rss/news/",
-            "https://arstechnica.com/feed/",
-            
-            # Entertainment and Culture
-            "https://variety.com/feed/",
-            "https://www.rollingstone.com/feed/",
-            "https://www.hollywoodreporter.com/feed/",
-            "https://www.vogue.com/rss",
-            "https://www.timeout.com/london/rss",
-            
-            # Sports
-            "https://www.espn.com/espn/rss/news",
-            "https://www.skysports.com/rss/0",
-            "https://www.fifa.com/rss-feeds/news",
-            "https://www.goal.com/feeds/en/news",
-            "https://www.cbssports.com/rss/headlines/",
-            
-            # Science and Environment
-            "https://rss.sciam.com/ScientificAmerican-Global",
-            "https://www.newscientist.com/feed/home/?cmpid=RSS",
-            "https://www.nature.com/nature.rss",
-            "https://feeds.bbci.co.uk/news/science_and_environment/rss.xml",
-            "https://www.sciencedaily.com/rss/all.xml",
-            
-            # Social Media and Blogs
-            "https://medium.com/feed/tag/world-news",
-            "https://medium.com/feed/tag/middle-east",
-            "https://rss.app/feeds/SGYMbetbJ8RyDPtL.xml",  # Twitter trending topics
-            "https://www.reddit.com/r/worldnews/.rss",
-            "https://www.reddit.com/r/geopolitics/.rss",
+            # --- Nigerian Newspapers ---
+            "https://tribuneonlineng.com/feed/",
+            "https://www.vanguardngr.com/feed/",
+            "https://www.thisdaylive.com/index.php/feed/",
+            "https://businessday.ng/feed/",
+            "https://thenationonlineng.net/feed/",
+            "https://herald.ng/feed/",  # Herald Nigeria
+            "https://dailypost.ng/feed/",
+            "https://dailypost.ng/news/feed/",  # News section
+            "https://guardian.ng/news/rss",  # Main news page feed
+            "https://rss.punchng.com/v1/category/latest_news",
+            "https://premiumtimesng.com/feed/",
+            "https://www.premiumtimesng.com/tag/feed",
+            "https://informationng.com/feed/",
+            "https://ripplesnigeria.com/feed/",
+            "https://dailynigerian.com/feed/",
+            "https://thenews-chronicle.com/feed/",
+            "https://pointblanknews.com/pbn/feed/",
+            "https://hallmarknews.com/feed/",
+            "https://pmnewsnigeria.com/feed/",
+            "https://saharareporters.com/rss",
+            "https://lindaikejisblog.com/feed/",
+            "https://bellanaija.com/feed/",
 
-            # India News
-            "https://www.thehindu.com/news/national/rss.xml",
-            "https://www.thehindu.com/news/international/rss.xml",
-            "https://www.thehindu.com/news/business/rss.xml",
-            "https://www.thehindu.com/news/sports/rss.xml",
-            "https://www.thehindu.com/news/entertainment/rss.xml",
-            
-            # Nigeria News
-            "https://www.vanguardngr.com/rss/all.xml",
-            "https://www.thisdaylive.com/rss/all.xml",
-            "https://www.premiumtimesng.com/rss/all.xml",
-            "https://www.dailytrust.com/rss/all.xml",
-            "https://www.nairametrics.com/rss/all.xml",
-            
+            # --- Qatar & Arabic Region ---
+            "https://qna.org.qa/en/RSS-Feeds",  # Qatar News Agency
+            "https://alwatannews.net/rss",  # Al-Watan Qatar (Arabic)
+            "https://aljazeera.com/xml/rss/all.xml",  # Al Jazeera
+            "https://dohanews.co/feed/",
+            "https://www.gulf-times.com/Rss/Index",  # Gulf Times RSS index
+
+            # --- Indian Newspapers ---
+            "https://indianexpress.com/feed/",
+            "https://www.nationalheraldindia.com/stories.rss",
+            "https://health.economictimes.indiatimes.com/rss/topstories",
+            "https://www.thehindu.com/feeder/default.rss",
+            "https://feeds.hindustantimes.com/",
+            "https://www.tribuneindia.com/rss/news/nation.xml",
+
+            # --- UK / International Newspapers ---
+            "https://www.telegraph.co.uk/rss.xml",
+            "https://www.mirror.co.uk/?service=rss",
+            "https://hulldailymail.co.uk/news/?service=rss",
+            "https://feeds.feedburner.com/daily-express-sport-news"
         ]
 
     def _clean_text(self, text: str) -> str:
@@ -193,7 +126,12 @@ class RSSFeedCollector:
                 
         # Also check the original query if it's not in the custom queries
         if query.lower() not in [var.lower() for var in self.custom_queries]:
-            return query.lower() in text
+            if query.lower() in text:
+                return True
+            
+        # If no custom queries, accept all articles from these specific sources
+        if not self.custom_queries:
+            return True
             
         return False
 
@@ -371,6 +309,9 @@ class RSSFeedCollector:
                     if not content:
                         content = entry.get('summary', description)
                     
+                    # Determine source region based on URL
+                    source_region = self._determine_source_region(feed_url)
+                    
                     article = {
                         'title': self._clean_text(title),
                         'description': self._clean_text(description),
@@ -379,6 +320,7 @@ class RSSFeedCollector:
                         'published_date': entry.get('published', datetime.now().strftime('%Y-%m-%d %H:%M:%S')),
                         'source': feed.feed.get('title', feed_url),
                         'source_url': feed_url,
+                        'source_region': source_region,
                         'query': query,
                         'language': entry.get('language', 'en')
                     }
@@ -398,6 +340,21 @@ class RSSFeedCollector:
                 self.failed_sources.add(feed_url)
                 
             return []
+
+    def _determine_source_region(self, feed_url: str) -> str:
+        """Determine the source region based on the feed URL"""
+        feed_url_lower = feed_url.lower()
+        
+        if any(domain in feed_url_lower for domain in ['nigeria', 'ng', 'tribuneonlineng', 'vanguardngr', 'thisdaylive', 'businessday.ng', 'thenationonlineng', 'herald.ng', 'dailypost.ng', 'guardian.ng', 'punchng', 'premiumtimesng', 'informationng', 'ripplesnigeria', 'dailynigerian', 'thenews-chronicle', 'pointblanknews', 'hallmarknews', 'pmnewsnigeria', 'saharareporters', 'lindaikejisblog', 'bellanaija']):
+            return 'Nigeria'
+        elif any(domain in feed_url_lower for domain in ['qatar', 'qa', 'qna.org.qa', 'alwatannews', 'aljazeera', 'dohanews', 'gulf-times']):
+            return 'Qatar'
+        elif any(domain in feed_url_lower for domain in ['india', 'indianexpress', 'nationalheraldindia', 'economictimes.indiatimes', 'thehindu', 'hindustantimes', 'tribuneindia']):
+            return 'India'
+        elif any(domain in feed_url_lower for domain in ['uk', 'telegraph.co.uk', 'mirror.co.uk', 'hulldailymail.co.uk', 'feedburner.com']):
+            return 'UK'
+        else:
+            return 'International'
 
     def collect_from_feeds(self, query: str) -> List[Dict[Any, Any]]:
         """Collect news from all RSS feeds for a given query"""
@@ -446,10 +403,11 @@ class RSSFeedCollector:
         
         # If no queries are available, use a default set of relevant keywords
         if not search_queries:
-            # Default keywords for Middle East and international news
+            # Default keywords for Nigerian, Qatar, and Indian news
             search_queries = [
-                "middle east", "qatar", "nigeria", "gulf", "arab", "islamic", 
-                "oil", "energy", "politics", "diplomacy", "trade", "business"
+                "nigeria", "qatar", "india", "africa", "middle east", "gulf", 
+                "arab", "nigerian", "qatari", "indian", "politics", "business", 
+                "economy", "oil", "gas", "energy", "trade", "diplomacy"
             ]
         
         # Remove duplicates while preserving order
@@ -473,7 +431,7 @@ class RSSFeedCollector:
             # Save to CSV
             if output_file is None:
                 # Use target name in filename if provided
-                filename_prefix = f"rss_news_{target_name.replace(' ', '_').lower()}" if target_name else "rss_news"
+                filename_prefix = f"nigerian_qatar_indian_rss_{target_name.replace(' ', '_').lower()}" if target_name else "nigerian_qatar_indian_rss"
                 output_file = self.base_path / 'data' / 'raw' / f"{filename_prefix}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
             
             output_file = Path(output_file)
@@ -481,6 +439,13 @@ class RSSFeedCollector:
             
             df.to_csv(output_file, index=False)
             logger.info(f"Saved {len(df)} articles to {output_file}")
+            
+            # Print summary by region
+            if 'source_region' in df.columns:
+                region_summary = df['source_region'].value_counts()
+                logger.info("Articles collected by region:")
+                for region, count in region_summary.items():
+                    logger.info(f"  {region}: {count} articles")
         else:
             logger.warning("No articles found for any query")
 
@@ -493,24 +458,24 @@ def main(target_and_variations: List[str] = None, user_id: str = None):
         user_id: Optional user ID for database queries
     """
     if not target_and_variations or len(target_and_variations) == 0:
-        print("[RSS Collector] Error: No target/query variations provided.")
+        print("[Nigerian Qatar Indian RSS Collector] Error: No target/query variations provided.")
         return
     
     target_name = target_and_variations[0]
     queries = target_and_variations[1:]
-    print(f"[RSS Collector] Received Target: {target_name}, Queries: {queries}")
+    print(f"[Nigerian Qatar Indian RSS Collector] Received Target: {target_name}, Queries: {queries}")
     
     # Construct output file name
     today = datetime.now().strftime("%Y%m%d")
     safe_target_name = target_name.replace(" ", "_").lower()
-    output_path = Path(__file__).parent.parent.parent / "data" / "raw" / f"rss_{safe_target_name}_{today}.csv"
+    output_path = Path(__file__).parent.parent.parent / "data" / "raw" / f"nigerian_qatar_indian_rss_{safe_target_name}_{today}.csv"
     
     # Initialize collector with the provided queries
-    collector = RSSFeedCollector(custom_queries=queries)
+    collector = NigerianQatarIndianRSSCollector(custom_queries=queries)
     
     # Collect data using the provided queries
     collector.collect_all(queries=queries, output_file=output_path, target_name=target_name)
 
 if __name__ == "__main__":
-    print("Running RSS collector directly (without args)... Use run_collectors.py for proper execution.")
-    main([]) # Pass empty list for direct run scenario 
+    print("Running Nigerian Qatar Indian RSS collector directly (without args)... Use run_collectors.py for proper execution.")
+    main([]) # Pass empty list for direct run scenario

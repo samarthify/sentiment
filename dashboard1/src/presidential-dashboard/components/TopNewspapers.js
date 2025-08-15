@@ -19,13 +19,26 @@ import {
   Avatar,
   LinearProgress,
   CircularProgress,
-  Alert
+  Alert,
+  Menu,
+  MenuItem,
+  Tooltip,
+  Snackbar
 } from '@mui/material';
 import {
   TrendingUp as TrendingUpIcon,
   TrendingDown as TrendingDownIcon,
   Remove as RemoveIcon,
-  OpenInNew as OpenInNewIcon
+  OpenInNew as OpenInNewIcon,
+  Schedule as ScheduleIcon,
+  Summarize as SummarizeIcon,
+  Analytics as AnalyticsIcon,
+  Psychology as PsychologyIcon,
+  Article as ArticleIcon,
+  ThumbUp as ThumbUpIcon,
+  ThumbDown as ThumbDownIcon,
+  ThumbsUpDown as ThumbsUpDownIcon,
+  Edit as EditIcon
 } from '@mui/icons-material';
 import { motion } from 'framer-motion';
 import DataService from '../../services/DataService';
@@ -49,16 +62,23 @@ const TopNewspapers = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   
+  // Feedback UI state
+  const [feedbackMenuAnchor, setFeedbackMenuAnchor] = useState(null);
+  const [feedbackLoading, setFeedbackLoading] = useState(false);
+  const [snackbarOpen, setSnackbarOpen] = useState(false);
+  const [snackbarMessage, setSnackbarMessage] = useState('');
+  
   // Use the imported hook or fallback
   const authContext = useAuth();
   const accessToken = authContext?.accessToken || null;
+  const user = authContext?.user || null;
 
   useEffect(() => {
     const fetchNewspapers = async () => {
       try {
         setLoading(true);
         setError(null);
-        const data = await DataService.getNewspaperSources(accessToken);
+        const data = await DataService.getNewspaperSources(accessToken, user?.id);
         
         // Filter out businessdayonline newspaper
         const filteredData = data.filter(newspaper => 
@@ -77,7 +97,7 @@ const TopNewspapers = () => {
 
     // Always try to fetch data, even without access token (for testing)
     fetchNewspapers();
-  }, [accessToken]);
+  }, [accessToken, user?.id]);
 
   const getSentimentColor = (score) => {
     if (score >= 0.3) return 'success';
@@ -89,6 +109,47 @@ const TopNewspapers = () => {
     if (score >= 0.3) return <TrendingUpIcon />;
     if (score <= -0.3) return <TrendingDownIcon />;
     return <RemoveIcon />;
+  };
+
+  // Utility functions for enhanced article analysis
+  const calculateReadingTime = (text) => {
+    const wordsPerMinute = 200; // Average reading speed
+    const wordCount = text ? text.trim().split(/\s+/).length : 0;
+    return Math.ceil(wordCount / wordsPerMinute);
+  };
+
+  const getWordCount = (text) => {
+    return text ? text.trim().split(/\s+/).length : 0;
+  };
+
+  const extractKeywords = (text) => {
+    if (!text) return [];
+    // Simple keyword extraction - remove common words and get most frequent
+    const commonWords = new Set(['the', 'a', 'an', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for', 'of', 'with', 'by', 'is', 'are', 'was', 'were', 'be', 'been', 'have', 'has', 'had', 'do', 'does', 'did', 'will', 'would', 'should', 'could', 'can', 'may', 'might', 'must', 'this', 'that', 'these', 'those']);
+    
+    const words = text.toLowerCase()
+      .replace(/[^\w\s]/g, ' ')
+      .split(/\s+/)
+      .filter(word => word.length > 3 && !commonWords.has(word));
+    
+    const wordCount = {};
+    words.forEach(word => {
+      wordCount[word] = (wordCount[word] || 0) + 1;
+    });
+    
+    return Object.entries(wordCount)
+      .sort(([,a], [,b]) => b - a)
+      .slice(0, 5)
+      .map(([word]) => word);
+  };
+
+  const getSentimentIntensity = (score) => {
+    const absScore = Math.abs(score);
+    if (absScore >= 0.7) return 'Very Strong';
+    if (absScore >= 0.5) return 'Strong';
+    if (absScore >= 0.3) return 'Moderate';
+    if (absScore >= 0.1) return 'Weak';
+    return 'Neutral';
   };
 
   const handleSourceClick = (source) => {
@@ -110,6 +171,63 @@ const TopNewspapers = () => {
   const handleCloseArticleDialog = () => {
     setArticleDialogOpen(false);
     setSelectedArticle(null);
+  };
+
+  // Feedback handlers
+  const handleFeedbackClick = (event) => {
+    setFeedbackMenuAnchor(event.currentTarget);
+  };
+
+  const handleFeedbackClose = () => {
+    setFeedbackMenuAnchor(null);
+  };
+
+  const handleSentimentFeedback = async (newSentiment) => {
+    if (!selectedArticle?.id) {
+      console.error('No article ID available for feedback');
+      return;
+    }
+
+    setFeedbackLoading(true);
+    try {
+      await DataService.submitSentimentFeedback(
+        selectedArticle.id,
+        newSentiment,
+        'article',
+        accessToken
+      );
+      
+      // Update the local state to reflect the change
+      setSelectedArticle(prev => ({
+        ...prev,
+        sentiment: newSentiment
+      }));
+      
+      // Update the newspaper data as well
+      setTopNewspapers(prev => prev.map(newspaper => ({
+        ...newspaper,
+        recent_articles: newspaper.recent_articles?.map(article => 
+          article.id === selectedArticle.id 
+            ? { ...article, sentiment: newSentiment }
+            : article
+        )
+      })));
+
+      setSnackbarMessage(`Sentiment updated to ${newSentiment} successfully!`);
+      setSnackbarOpen(true);
+      
+    } catch (error) {
+      console.error('Error submitting feedback:', error);
+      setSnackbarMessage('Failed to update sentiment. Please try again.');
+      setSnackbarOpen(true);
+    } finally {
+      setFeedbackLoading(false);
+      handleFeedbackClose();
+    }
+  };
+
+  const handleSnackbarClose = () => {
+    setSnackbarOpen(false);
   };
 
   if (loading) {
@@ -380,12 +498,15 @@ const TopNewspapers = () => {
         )}
       </Dialog>
 
-      {/* Article Detail Dialog */}
+      {/* Enhanced Article Detail Dialog */}
       <Dialog 
         open={articleDialogOpen} 
         onClose={handleCloseArticleDialog}
-        maxWidth="md"
+        maxWidth="lg"
         fullWidth
+        PaperProps={{
+          sx: { minHeight: '80vh' }
+        }}
       >
         {selectedArticle && (
           <>
@@ -393,86 +514,215 @@ const TopNewspapers = () => {
               <Box display="flex" alignItems="center" justifyContent="space-between">
                 <Box display="flex" alignItems="center">
                   <Avatar sx={{ bgcolor: 'primary.main', mr: 2 }}>
-                    📰
+                    <ArticleIcon />
                   </Avatar>
                   <Box>
-                    <Typography variant="h6">{selectedArticle.title}</Typography>
-                    <Typography variant="body2" color="text.secondary">
+                    <Typography variant="h5" sx={{ fontWeight: 600, lineHeight: 1.2 }}>
+                      {selectedArticle.title}
+                    </Typography>
+                    <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
                       {selectedArticle.source_name} • {selectedArticle.date}
                     </Typography>
+                    <Box display="flex" alignItems="center" gap={1} mt={1}>
+                      <Chip
+                        icon={<ScheduleIcon />}
+                        label={`${calculateReadingTime(selectedArticle.text)} min read`}
+                        size="small"
+                        variant="outlined"
+                      />
+                      <Chip
+                        icon={<AnalyticsIcon />}
+                        label={`${getWordCount(selectedArticle.text)} words`}
+                        size="small"
+                        variant="outlined"
+                      />
+                      <Chip
+                        label={getSentimentIntensity(selectedArticle.sentiment_score)}
+                        color={getSentimentColor(selectedArticle.sentiment_score)}
+                        size="small"
+                      />
+                    </Box>
                   </Box>
                 </Box>
-                <Chip
-                  label={selectedArticle.sentiment}
-                  color={selectedArticle.sentiment === 'positive' ? 'success' : 
-                         selectedArticle.sentiment === 'negative' ? 'error' : 'warning'}
-                  size="medium"
-                />
+                <Box textAlign="right">
+                  <Chip
+                    label={selectedArticle.sentiment}
+                    color={selectedArticle.sentiment === 'positive' ? 'success' : 
+                           selectedArticle.sentiment === 'negative' ? 'error' : 'warning'}
+                    size="large"
+                    sx={{ mb: 1 }}
+                  />
+                  <Typography variant="h4" color={getSentimentColor(selectedArticle.sentiment_score)} sx={{ fontWeight: 700 }}>
+                    {(selectedArticle.sentiment_score * 100).toFixed(0)}%
+                  </Typography>
+                </Box>
               </Box>
             </DialogTitle>
             <DialogContent>
-              <Grid container spacing={3}>
-                <Grid item xs={12} md={6}>
-                  <Typography variant="h6" gutterBottom>
-                    Sentiment Analysis
-                  </Typography>
-                  <Box mb={3}>
-                    <Typography variant="body2" color="text.secondary" gutterBottom>
-                      Sentiment Score
-                    </Typography>
+              <Grid container spacing={4}>
+                {/* Left Column - Analysis & Insights */}
+                <Grid item xs={12} md={4}>
+                  {/* Sentiment Analysis Section */}
+                  <Card sx={{ mb: 3, p: 2 }}>
                     <Box display="flex" alignItems="center" mb={2}>
-                      <Chip
-                        icon={getSentimentIcon(selectedArticle.sentiment_score)}
-                        label={`${(selectedArticle.sentiment_score * 100).toFixed(0)}%`}
+                      <PsychologyIcon color="primary" sx={{ mr: 1 }} />
+                      <Typography variant="h6" sx={{ fontWeight: 600 }}>
+                        Sentiment Analysis
+                      </Typography>
+                    </Box>
+                    
+                    <Box mb={2}>
+                      <Typography variant="body2" color="text.secondary" gutterBottom>
+                        Sentiment Score
+                      </Typography>
+                      <Box display="flex" alignItems="center" mb={2}>
+                        <Chip
+                          icon={getSentimentIcon(selectedArticle.sentiment_score)}
+                          label={`${(selectedArticle.sentiment_score * 100).toFixed(0)}%`}
+                          color={getSentimentColor(selectedArticle.sentiment_score)}
+                          size="medium"
+                        />
+                        <Typography variant="body2" color="text.secondary" sx={{ ml: 2 }}>
+                          {getSentimentIntensity(selectedArticle.sentiment_score)}
+                        </Typography>
+                      </Box>
+                      <LinearProgress
+                        variant="determinate"
+                        value={Math.abs(selectedArticle.sentiment_score * 100)}
                         color={getSentimentColor(selectedArticle.sentiment_score)}
+                        sx={{ height: 8, borderRadius: 4 }}
+                      />
+                    </Box>
+
+                    <Box>
+                      <Box display="flex" alignItems="center" justifyContent="space-between" mb={1}>
+                        <Typography variant="body2" color="text.secondary">
+                          Classification
+                        </Typography>
+                        <Tooltip title="Provide feedback on AI sentiment analysis">
+                          <IconButton 
+                            size="small" 
+                            onClick={handleFeedbackClick}
+                            disabled={feedbackLoading}
+                            sx={{ color: 'primary.main' }}
+                          >
+                            <EditIcon fontSize="small" />
+                          </IconButton>
+                        </Tooltip>
+                      </Box>
+                      <Chip
+                        label={selectedArticle.sentiment}
+                        color={selectedArticle.sentiment === 'positive' ? 'success' : 
+                               selectedArticle.sentiment === 'negative' ? 'error' : 'warning'}
                         size="medium"
                       />
                     </Box>
-                    <LinearProgress
-                      variant="determinate"
-                      value={Math.abs(selectedArticle.sentiment_score * 100)}
-                      color={getSentimentColor(selectedArticle.sentiment_score)}
-                      sx={{ height: 8, borderRadius: 4 }}
-                    />
-                  </Box>
-
-                  <Box mb={3}>
-                    <Typography variant="h6" gutterBottom>
-                      AI Justification
-                    </Typography>
-                    <Card variant="outlined" sx={{ p: 2, backgroundColor: 'grey.50' }}>
-                      <Typography variant="body2" sx={{ whiteSpace: 'pre-wrap' }}>
-                        {selectedArticle.sentiment_justification}
-                      </Typography>
-                    </Card>
-                  </Box>
-                </Grid>
-
-                <Grid item xs={12} md={6}>
-                  <Typography variant="h6" gutterBottom>
-                    Article Content
-                  </Typography>
-                  <Card variant="outlined" sx={{ p: 2, maxHeight: 300, overflow: 'auto' }}>
-                    <Typography variant="body2" sx={{ whiteSpace: 'pre-wrap' }}>
-                      {selectedArticle.text}
-                    </Typography>
                   </Card>
 
+                  {/* Keywords Section */}
+                  <Card sx={{ mb: 3, p: 2 }}>
+                    <Box display="flex" alignItems="center" mb={2}>
+                      <SummarizeIcon color="primary" sx={{ mr: 1 }} />
+                      <Typography variant="h6" sx={{ fontWeight: 600 }}>
+                        Key Topics
+                      </Typography>
+                    </Box>
+                    <Box display="flex" flexWrap="wrap" gap={1}>
+                      {extractKeywords(selectedArticle.text).map((keyword, idx) => (
+                        <Chip
+                          key={idx}
+                          label={keyword}
+                          size="small"
+                          variant="outlined"
+                          color="primary"
+                        />
+                      ))}
+                    </Box>
+                  </Card>
+
+                  {/* Source Link */}
                   {selectedArticle.url && (
-                    <Box mt={2}>
+                    <Card sx={{ p: 2 }}>
                       <Typography variant="body2" color="text.secondary" gutterBottom>
-                        Source URL
+                        Original Source
                       </Typography>
                       <Button
-                        variant="outlined"
+                        variant="contained"
                         startIcon={<OpenInNewIcon />}
                         onClick={() => window.open(selectedArticle.url, '_blank')}
                         fullWidth
+                        sx={{ mt: 1 }}
                       >
                         View Original Article
                       </Button>
-                    </Box>
+                    </Card>
                   )}
+                </Grid>
+
+                {/* Middle Column - AI Justification */}
+                <Grid item xs={12} md={4}>
+                  <Card sx={{ height: 'fit-content', p: 2 }}>
+                    <Box display="flex" alignItems="center" mb={2}>
+                      <AnalyticsIcon color="primary" sx={{ mr: 1 }} />
+                      <Typography variant="h6" sx={{ fontWeight: 600 }}>
+                        AI Analysis & Justification
+                      </Typography>
+                    </Box>
+                    <Card 
+                      variant="outlined" 
+                      sx={{ 
+                        p: 3, 
+                        backgroundColor: 'rgba(25, 118, 210, 0.04)',
+                        border: '1px solid rgba(25, 118, 210, 0.12)',
+                        maxHeight: '60vh',
+                        overflow: 'auto'
+                      }}
+                    >
+                      <Typography 
+                        variant="body1" 
+                        sx={{ 
+                          whiteSpace: 'pre-wrap',
+                          lineHeight: 1.6,
+                          fontSize: '0.95rem'
+                        }}
+                      >
+                        {selectedArticle.sentiment_justification || 'No AI justification available for this article.'}
+                      </Typography>
+                    </Card>
+                  </Card>
+                </Grid>
+
+                {/* Right Column - Article Content */}
+                <Grid item xs={12} md={4}>
+                  <Card sx={{ height: 'fit-content', p: 2 }}>
+                    <Box display="flex" alignItems="center" mb={2}>
+                      <ArticleIcon color="primary" sx={{ mr: 1 }} />
+                      <Typography variant="h6" sx={{ fontWeight: 600 }}>
+                        Article Content
+                      </Typography>
+                    </Box>
+                    <Card 
+                      variant="outlined" 
+                      sx={{ 
+                        p: 3, 
+                        maxHeight: '60vh', 
+                        overflow: 'auto',
+                        backgroundColor: 'rgba(0, 0, 0, 0.02)'
+                      }}
+                    >
+                      <Typography 
+                        variant="body1" 
+                        sx={{ 
+                          whiteSpace: 'pre-wrap',
+                          lineHeight: 1.7,
+                          fontSize: '0.95rem',
+                          textAlign: 'justify'
+                        }}
+                      >
+                        {selectedArticle.text || 'No content available for this article.'}
+                      </Typography>
+                    </Card>
+                  </Card>
                 </Grid>
               </Grid>
             </DialogContent>
@@ -491,6 +741,43 @@ const TopNewspapers = () => {
           </>
         )}
       </Dialog>
+
+      {/* Sentiment Feedback Menu */}
+      <Menu
+        anchorEl={feedbackMenuAnchor}
+        open={Boolean(feedbackMenuAnchor)}
+        onClose={handleFeedbackClose}
+        anchorOrigin={{
+          vertical: 'bottom',
+          horizontal: 'left',
+        }}
+        transformOrigin={{
+          vertical: 'top',
+          horizontal: 'left',
+        }}
+      >
+        <MenuItem onClick={() => handleSentimentFeedback('positive')} disabled={feedbackLoading}>
+          <ThumbUpIcon sx={{ mr: 1, color: 'success.main' }} />
+          Mark as Positive
+        </MenuItem>
+        <MenuItem onClick={() => handleSentimentFeedback('neutral')} disabled={feedbackLoading}>
+          <ThumbsUpDownIcon sx={{ mr: 1, color: 'warning.main' }} />
+          Mark as Neutral
+        </MenuItem>
+        <MenuItem onClick={() => handleSentimentFeedback('negative')} disabled={feedbackLoading}>
+          <ThumbDownIcon sx={{ mr: 1, color: 'error.main' }} />
+          Mark as Negative
+        </MenuItem>
+      </Menu>
+
+      {/* Feedback Snackbar */}
+      <Snackbar
+        open={snackbarOpen}
+        autoHideDuration={4000}
+        onClose={handleSnackbarClose}
+        message={snackbarMessage}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+      />
     </Box>
   );
 };

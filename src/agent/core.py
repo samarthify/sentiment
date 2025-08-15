@@ -23,12 +23,16 @@ from src.utils.notification_service import send_analysis_report, send_processing
 from .brain import AgentBrain
 from .autogen_agents import AutogenAgentSystem
 import inspect
-from src.processing.sentiment_analyzer import ImprovedSentimentAnalyzer
+from src.processing.presidential_sentiment_analyzer import PresidentialSentimentAnalyzer
 from src.processing.data_processor import DataProcessor
 from uuid import UUID
 # Add necessary DB imports
 from sqlalchemy.orm import sessionmaker, Session 
 from src.api.models import TargetIndividualConfiguration, EmailConfiguration
+import src.api.models as models # Added for location classification update
+from sqlalchemy import or_
+# Add deduplication service import
+from src.utils.deduplication_service import DeduplicationService
 
 # Configure logging
 logging.basicConfig(
@@ -105,11 +109,18 @@ class SentimentAnalysisAgent:
 
         # Initialize processor and analyzer
         self.data_processor = DataProcessor()
-        self.sentiment_analyzer = ImprovedSentimentAnalyzer()
-
-        # --- Initialize base_path and is_running --- 
-        # Assuming core.py is in src/agent, base_path goes up three levels to project root
-        self.base_path = Path(__file__).resolve().parent.parent.parent 
+        # Initialize presidential sentiment analyzer with default values
+        # Will be updated with specific target individual name when processing
+        
+        # Initialize deduplication service
+        self.deduplication_service = DeduplicationService()
+        self.sentiment_analyzer = PresidentialSentimentAnalyzer()
+        
+        # Initialize enhanced location classifier
+        self.location_classifier = self._init_location_classifier()
+        
+        # Set base path for file operations
+        self.base_path = Path(__file__).parent.parent.parent
         self.is_running = True # Flag to control the main loop in run()
         # --- End initializations ---
 
@@ -195,63 +206,60 @@ class SentimentAnalysisAgent:
             logger.error(f"Error getting email config for user {user_id}: {e}", exc_info=True)
             return None
 
-    # --- Example of using target config ---
     def collect_data(self, user_id: str):
         """Collect data by running the external run_collectors.py script for a specific user."""
         if not user_id:
             logger.error("collect_data: Called without a user_id. Aborting.")
             return False
+        
         logger.info(f"Starting data collection cycle for user {user_id}...")
         self.status = "collecting"
-        target_name = "Default Target"
-        query_variations = []
-        collection_metrics = {
-            "start_time": datetime.now(),
-            "sources_attempted": "N/A", # Cannot determine from external script easily
-            "sources_successful": "N/A", # Cannot determine from external script easily
-            "records_collected": "N/A"  # Cannot determine from external script easily
-        }
-        collection_success = False
-        target_and_variations = [] # Initialize
         
         try:
-            # Get target config from DB
+            # Get target config from DB ONLY - no fallbacks
             with self.db_factory() as db:
-                logger.debug("collect_data: Fetching target config...")
+                logger.debug("collect_data: Fetching target config from database...")
                 target_config = self._get_latest_target_config(db, user_id)
-                if target_config:
-                    target_name = target_config.individual_name
-                    query_variations = target_config.query_variations
-                    logger.debug(f"[DB Target Config] Using Name: {target_name}")
-                    logger.debug(f"[DB Target Config] Using Variations: {query_variations}")
-                else:
-                    logger.warning("[DB Target Config] Not found. Using defaults.")
-                    # Keep defaults target_name = "Default Target", query_variations = []
-                    logger.debug(f"[DB Target Config] Using Name: {target_name}")
-                    logger.debug(f"[DB Target Config] Using Variations: {query_variations}")
+                
+                if not target_config:
+                    logger.error(f"No target configuration found for user {user_id}. Please configure target first.")
+                    return False
+                
+                target_name = target_config.individual_name
+                query_variations = target_config.query_variations
+                
+                if not query_variations:
+                    logger.warning(f"User {user_id} has no query variations configured. Using only target name.")
+                    query_variations = []
+                
+                logger.info(f"Using target: {target_name} with {len(query_variations)} query variations")
             
-            # --- Prepare query list and JSON encode it ---
-            target_and_variations = [target_name] + (query_variations if query_variations else [])
+            # Prepare query list: [target_name, query1, query2, ...]
+            target_and_variations = [target_name] + query_variations
             queries_json = json.dumps(target_and_variations)
-            logger.debug(f"Passing queries as JSON string: {queries_json}")
-            # --- End prepare --- 
+            logger.debug(f"Passing queries as JSON: {queries_json}")
 
-            # --- Execute run_collectors.py --- 
+            # Execute run_collectors.py with user_id context
             script_path = self.base_path / "src" / "collectors" / "run_collectors.py"
             if not script_path.exists():
-                 logger.error(f"Collector script not found at: {script_path}")
-                 raise FileNotFoundError(f"Collector script not found: {script_path}")
+                logger.error(f"Collector script not found at: {script_path}")
+                raise FileNotFoundError(f"Collector script not found: {script_path}")
+            
+            # Pass user_id as environment variable so collectors can use it
+            env = os.environ.copy()
+            env['COLLECTOR_USER_ID'] = str(user_id)
             
             # Construct command with --queries argument
             command = [sys.executable, "-m", "src.collectors.run_collectors", "--queries", queries_json]
-            logger.info(f"Executing command: {' '.join(command)}") # Note: this won't show quotes around json correctly
+            logger.info(f"Executing command: {' '.join(command)}")
             
             process = subprocess.run(
                 command,
                 capture_output=True,
                 text=True,
-                check=False, 
-                cwd=self.base_path
+                check=False,
+                cwd=self.base_path,
+                env=env  # Pass environment with user_id
             )
             
             # Log stdout and stderr from the script
@@ -263,75 +271,17 @@ class SentimentAnalysisAgent:
             if process.returncode == 0:
                 logger.info("run_collectors.py executed successfully.")
                 collection_success = True
-                collection_metrics["records_collected"] = "Unknown (External Script)"
             else:
-                logger.error(f"run_collectors.py failed with return code {process.returncode}")
+                logger.error(f"run_collectors.py failed with return code: {process.returncode}")
                 collection_success = False
-            # --- End Execute run_collectors.py --- 
-
-            self.data_history["collected"].append({"timestamp": time.time(), "success": collection_success})
-            self.last_run_times["collect"] = time.time()
-
-        except FileNotFoundError as fnf_err:
-            logger.error(f"Error during data collection: {fnf_err}")
-            collection_success = False
+                
         except Exception as e:
             logger.error(f"Error during data collection: {e}", exc_info=True)
             collection_success = False
+        
         finally:
             self.status = "idle"
-            collection_metrics["end_time"] = datetime.now()
-            collection_metrics["duration_seconds"] = (collection_metrics["end_time"] - collection_metrics["start_time"]).total_seconds()
-            # Approximation - success rate cannot be calculated accurately here
-            collection_metrics["collection_success_rate"] = 1.0 if collection_success else 0.0 
-
-        # --- Send Collection Notification (Using DB Config for specific user) ---
-        if collection_success: 
-            try:
-                recipients = []
-                notify_collection_enabled = False
-                with self.db_factory() as db:
-                    # --- Fetch email config specifically for this user_id ---
-                    latest_email_config = self._get_email_config_for_user(db, user_id)
-                    # ---------------------------------------------------------
-                    if latest_email_config:
-                         logger.debug(f"[DB Email Config - Collection Check for user {user_id}] Found config ID: {latest_email_config.id}")
-                         logger.debug(f"[DB Email Config - Collection Check for user {user_id}] Enabled: {latest_email_config.enabled}")
-                         logger.debug(f"[DB Email Config - Collection Check for user {user_id}] Notify on Collection: {latest_email_config.notify_on_collection}")
-                         logger.debug(f"[DB Email Config - Collection Check for user {user_id}] Recipients: {latest_email_config.recipients}")
-                    else:
-                         logger.debug(f"[DB Email Config - Collection Check for user {user_id}] No config found.")
-
-                    if latest_email_config and latest_email_config.enabled:
-                        if latest_email_config.notify_on_collection:
-                            notify_collection_enabled = True
-                            if latest_email_config.recipients:
-                                recipients = latest_email_config.recipients
-                            else:
-                                logger.warning(f"Collection notifications enabled for user {user_id}, but no recipients configured.")
-                        else:
-                             logger.info(f"Collection notifications are disabled for user {user_id} (notify_on_collection=False).")
-                
-                if notify_collection_enabled and recipients:
-                    logger.info(f"Attempting to send collection completion email for user {user_id} to DB recipients: {recipients}")
-                    try:
-                        # Prepare data for the notification function (use approximated metrics)
-                        notification_data = {
-                            "collection_success_rate": collection_metrics["collection_success_rate"],
-                            "active_sources": collection_metrics["sources_successful"], # N/A
-                            "total_sources": collection_metrics["sources_attempted"], # N/A
-                            "total_records": collection_metrics["records_collected"], # N/A or Unknown
-                            "duration_seconds": collection_metrics["duration_seconds"]
-                        }
-                        send_collection_notification(notification_data, recipients, self.db_factory)
-                        logger.info("Collection completion email triggered successfully.")
-                    except Exception as e:
-                        logger.error(f"Error triggering collection completion email: {str(e)}", exc_info=True)
-            
-            except Exception as e:
-                logger.error(f"Error checking DB or sending collection notification: {str(e)}", exc_info=True)
         
-        logger.debug("collect_data: Finished method.")
         return collection_success
 
     # Update other methods like process_data, run_analysis etc. similarly 
@@ -379,8 +329,15 @@ class SentimentAnalysisAgent:
                 if 'user_id' not in params:
                     return {"success": False, "message": "run_processing command requires 'user_id' parameter."}
                 # Similar thread/async consideration for processing
-                self._run_task(lambda: self.process_data(params['user_id']), f"process_cmd_{params['user_id']}") 
+                self._run_task(lambda: self.run_single_cycle(params['user_id']), f"process_cmd_{params['user_id']}") 
                 return {"success": True, "message": f"Processing task triggered for user {params['user_id']}."}
+            elif command == "update_locations":
+                # --- Requires user_id now ---
+                if 'user_id' not in params:
+                    return {"success": False, "message": "update_locations command requires 'user_id' parameter."}
+                batch_size = params.get('batch_size', 100)
+                self._run_task(lambda: self.update_location_classifications(params['user_id'], batch_size), f"location_update_cmd_{params['user_id']}") 
+                return {"success": True, "message": f"Location classification update triggered for user {params['user_id']} with batch size {batch_size}."}
             # Add other commands as needed
             else:
                 return {"success": False, "message": f"Unknown command: {command}"}
@@ -529,25 +486,27 @@ class SentimentAnalysisAgent:
 
         # --- Sentiment Analysis ---
         try:
-            logger.info("Performing sentiment analysis...")
-            target_individual_name_for_analysis = "the subject" # Default perspective
+            logger.info("Performing presidential sentiment analysis...")
+            target_individual_name_for_analysis = "the President" # Default presidential perspective
             with self.db_factory() as db_session: # Changed variable name for clarity
                 target_config = self._get_latest_target_config(db_session, user_id)
                 if target_config and target_config.individual_name:
                     target_individual_name_for_analysis = target_config.individual_name
-                    logger.info(f"Sentiment analysis will use perspective of: {target_individual_name_for_analysis}")
+                    logger.info(f"Presidential sentiment analysis will use perspective of: {target_individual_name_for_analysis}")
+                    # Update the presidential analyzer with the target individual name
+                    self.sentiment_analyzer.president_name = target_individual_name_for_analysis
                 else:
-                    logger.warning(f"No specific target individual found for user {user_id} or name is empty. Using default perspective for sentiment analysis.")
+                    logger.warning(f"No specific target individual found for user {user_id} or name is empty. Using default presidential perspective for sentiment analysis.")
 
             if 'text' in all_data.columns:
                  if hasattr(self, 'sentiment_analyzer') and self.sentiment_analyzer is not None:
                      sentiment_results = all_data['text'].apply(
-                        lambda x: self.sentiment_analyzer.analyze(x, target_individual_name=target_individual_name_for_analysis) if isinstance(x, str) and pd.notna(x) else ('neutral', 0.5, None)
+                        lambda x: self.sentiment_analyzer.analyze(x) if isinstance(x, str) and pd.notna(x) else {'sentiment_label': 'neutral', 'sentiment_score': 0.5, 'sentiment_justification': None}
                      )
                      # Assign label, score, and justification from the results
-                     all_data['sentiment_label'] = sentiment_results.apply(lambda res: res[0])
-                     all_data['sentiment_score'] = sentiment_results.apply(lambda res: res[1])
-                     all_data['sentiment_justification'] = sentiment_results.apply(lambda res: res[2])
+                     all_data['sentiment_label'] = sentiment_results.apply(lambda res: res['sentiment_label'])
+                     all_data['sentiment_score'] = sentiment_results.apply(lambda res: res['sentiment_score'])
+                     all_data['sentiment_justification'] = sentiment_results.apply(lambda res: res['sentiment_justification'])
                      logger.info("Sentiment analysis completed.")
                      processed_df = all_data
                  else:
@@ -561,6 +520,43 @@ class SentimentAnalysisAgent:
         except Exception as e:
             logger.error(f"Error during sentiment analysis: {e}", exc_info=True)
             return False
+
+        # --- Enhanced Location Classification ---
+        try:
+            logger.info("Performing enhanced location classification...")
+            if 'text' in all_data.columns and self.location_classifier:
+                # Apply location classification to each row with metadata
+                location_results = []
+                for idx, row in all_data.iterrows():
+                    text = row.get('text', '')
+                    platform = row.get('platform', '')
+                    source = row.get('source', '')
+                    user_location = row.get('user_location', '')
+                    user_name = row.get('user_name', '')
+                    user_handle = row.get('user_handle', '')
+                    
+                    location_label, location_confidence = self.location_classifier.classify(
+                        text, platform, source, user_location, user_name, user_handle
+                    )
+                    location_results.append((location_label, location_confidence))
+                
+                # Assign location results to DataFrame
+                all_data['location_label'] = [res[0] for res in location_results]
+                all_data['location_confidence'] = [res[1] for res in location_results]
+                logger.info("Enhanced location classification completed.")
+                
+                # Update processed_df reference
+                processed_df = all_data
+            else:
+                logger.warning("Location classifier not available or text column missing. Skipping enhanced location classification.")
+                all_data['location_label'] = None
+                all_data['location_confidence'] = None
+                processed_df = all_data
+        except Exception as e:
+            logger.error(f"Error during enhanced location classification: {e}", exc_info=True)
+            all_data['location_label'] = None
+            all_data['location_confidence'] = None
+            processed_df = all_data
 
         # --- Prepare Data for API (Ensure user_id is included) ---
         if processed_df.empty:
@@ -646,7 +642,8 @@ class SentimentAnalysisAgent:
                 'children', 'direct_reach', 'cumulative_reach', 'domain_reach', 'tags',
                 'score', 'alert_name', 'type', 'post_id', 'retweets', 'likes',
                 'user_location', 'comments', 'user_name', 'user_handle', 'user_avatar',
-                'sentiment_label', 'sentiment_score', 'sentiment_justification'
+                'sentiment_label', 'sentiment_score', 'sentiment_justification',
+                'location_label', 'location_confidence'
             ]
             
             # Filter DataFrame columns to only include expected fields
@@ -874,90 +871,54 @@ class SentimentAnalysisAgent:
             logger.error("run_single_cycle: Called without user_id. Aborting.")
             return
 
-        # Check if agent is already busy (optional, depends on desired concurrency)
-        # if self.task_status['is_busy']:
-        #     logger.warning(f"run_single_cycle: Agent busy with {self.task_status['current_task']}, cannot start cycle for user {user_id}.")
-        #     # Raise an exception or return a status?
-        #     return
-
         try:
-            # Run collection for the user
+            # 1. Data Collection (collect raw data, no analysis)
+            logger.info(f"Starting data collection for user {user_id}...")
             collect_success = self._run_task(lambda: self.collect_data(user_id), f'collect_user_{user_id}')
-
-            # Run processing for the user (consider if it should run even if collection failed)
-            process_success = self._run_task(lambda: self.process_data(user_id), f'process_user_{user_id}')
-
-            # --- Send Analysis Notification (Using DB Config) ---
-            if process_success:
-                logger.debug(f"Processing task succeeded for user {user_id}, checking for analysis notification.")
-                try:
-                    recipients = []
-                    notify_analysis_enabled = False
-                    with self.db_factory() as db:
-                        # --- Fetch email config specifically for this user_id ---
-                        latest_email_config = self._get_email_config_for_user(db, user_id)
-                        # ---------------------------------------------------------
-                        if latest_email_config:
-                            logger.debug(f"[DB Email Config - Analysis Check for user {user_id}] Found config ID: {latest_email_config.id}")
-                            logger.debug(f"[DB Email Config - Analysis Check for user {user_id}] Enabled: {latest_email_config.enabled}")
-                            logger.debug(f"[DB Email Config - Analysis Check for user {user_id}] Notify on Analysis: {latest_email_config.notify_on_analysis}")
-                            logger.debug(f"[DB Email Config - Analysis Check for user {user_id}] Recipients: {latest_email_config.recipients}")
-                        else:
-                            logger.debug(f"[DB Email Config - Analysis Check for user {user_id}] No config found.")
-
-                        if latest_email_config and latest_email_config.enabled:
-                            if latest_email_config.notify_on_analysis:
-                                notify_analysis_enabled = True
-                                if latest_email_config.recipients:
-                                    recipients = latest_email_config.recipients
-                                else:
-                                    logger.warning(f"[DB Email Config - Analysis Check for user {user_id}] Analysis notifications enabled, but no recipients configured.")
-                            else:
-                                logger.info(f"[DB Email Config - Analysis Check for user {user_id}] Analysis notifications disabled in DB config.")
-
-                    if notify_analysis_enabled and recipients:
-                        logger.info(f"Attempting to send analysis report email for user {user_id} to DB recipients: {recipients}")
-                        try:
-                            from src.utils.notification_service import send_analysis_report 
-                            send_analysis_report(recipients, self.db_factory) # Pass user_id if report needs filtering
-                            logger.info(f"Analysis report email triggered successfully for user {user_id}.") 
-                        except Exception as e:
-                            logger.error(f"Error triggering analysis notification email for user {user_id}: {str(e)}", exc_info=True)
-
-                except ImportError as e:
-                    logger.warning(f"Could not import notification service for user {user_id}: {e}. Analysis notification skipped.")
-                except Exception as e:
-                    logger.error(f"Error checking email configuration or sending analysis notification for user {user_id}: {str(e)}", exc_info=True)
+            
+            if collect_success:
+                # 2. Run deduplication and insert unique records to DB
+                logger.info(f"Running deduplication and inserting unique records for user {user_id}...")
+                dedup_success = self._run_task(
+                    lambda: self._run_deduplication(user_id), 
+                    f'dedup_{user_id}'
+                )
+                
+                if dedup_success:
+                    # 3. Batch sentiment analysis (50 at once)
+                    logger.info(f"Starting batch sentiment analysis for user {user_id}...")
+                    sentiment_success = self._run_task(
+                        lambda: self._run_sentiment_batch_update(user_id), 
+                        f'sentiment_batch_{user_id}'
+                    )
+                    
+                    # 4. Batch location classification (100 at once)
+                    logger.info(f"Starting batch location updates for user {user_id}...")
+                    location_success = self._run_task(
+                        lambda: self._run_location_batch_update(user_id), 
+                        f'location_batch_{user_id}'
+                    )
+                    
+                    logger.info(f"Cycle completed for user {user_id}: Collection ✅, Deduplication ✅, Sentiment ✅, Location ✅")
+                else:
+                    logger.warning(f"Deduplication failed for user {user_id}, skipping analysis steps")
             else:
-                logger.warning(f"Skipping analysis notification for user {user_id} because the data processing step failed.")
+                logger.warning(f"Data collection failed for user {user_id}, skipping subsequent steps")
 
         except Exception as e:
             logger.error(f"Unexpected error during run_single_cycle for user {user_id}: {e}", exc_info=True)
         finally:
-            # Ensure busy status is reset if run_task didn't handle it (e.g., if we add concurrency check)
+            # Ensure busy status is reset
             pass
 
     # --- Modified: Old scheduled run - Adapt or remove later --- 
-    def _run_collect_and_process(self, user_id: Optional[str] = None): # Add optional user_id
-        """Run collection and processing in sequence. Requires user_id for multi-user setup."""
-        # --- THIS METHOD IS LIKELY DEPRECATED for user-triggered runs --- 
-        # --- Needs logic to iterate users or handle default if run without user_id ---
+    def _run_collect_and_process(self, user_id: Optional[str] = None):
         if not user_id:
-             logger.error("_run_collect_and_process: Called without user_id. Cannot run in multi-user mode without a target user. Aborting.")
-             return # Or handle a default user? For now, just abort.
-
-        # Use the new run_single_cycle logic if appropriate, or keep separate?
-        # Let's call the individual tasks directly for now, passing user_id.
-        collect_success = self._run_task(lambda: self.collect_data(user_id), f'collect_scheduled_{user_id}')
-        process_success = self._run_task(lambda: self.process_data(user_id), f'process_scheduled_{user_id}')
-
-        # --- Send Analysis Notification (Logic is duplicated from run_single_cycle - refactor later?) ---
-        if process_success:
-            # ... (Copy or refactor the analysis notification logic from run_single_cycle) ...
-            logger.debug(f"Processing task succeeded for scheduled run user {user_id}, checking for analysis notification.")
-            # ... (rest of analysis notification logic) ...
-        else:
-            logger.warning(f"Skipping analysis notification for scheduled run user {user_id} because processing failed.")
+            logger.error("_run_collect_and_process: Called without user_id. Cannot run in multi-user mode without a target user. Aborting.")
+            return
+        
+        # Just call the new workflow directly
+        self._run_task(lambda: self.run_single_cycle(user_id), f'scheduled_cycle_{user_id}')
 
     def update_metrics(self, latest_data: pd.DataFrame, analysis_result: Dict[str, Any]):
         """Update system metrics and performance indicators with Autogen insights"""
@@ -1198,6 +1159,611 @@ class SentimentAnalysisAgent:
         # # logger.debug("run: Exited main loop (is_running is False).")
         # # -------------------------------------------
         pass # run() method now does nothing actively
+
+    def _init_location_classifier(self):
+        """Initialize the enhanced location classifier with country patterns."""
+        try:
+            # Simplified country definitions for faster processing
+            country_patterns = {
+                'Nigeria': {
+                    'keywords': ['nigeria', 'nigerian', 'naija', 'lagos', 'abuja', 'kano', 'ibadan', 
+                               'port harcourt', 'tinubu', 'buhari', 'apc', 'pdp', 'nigerian government'],
+                    'sources': ['punch', 'guardian nigeria', 'vanguard', 'thisday', 'daily trust',
+                              'leadership', 'tribune', 'premium times', 'sahara reporters'],
+                    'domains': ['punchng.com', 'guardian.ng', 'vanguardngr.com', 'thisdaylive.com']
+                },
+                'US': {
+                    'keywords': ['america', 'american', 'washington', 'new york', 'california', 'texas', 'usa', 
+                               'united states', 'white house', 'congress', 'nfl', 'nba'],
+                    'sources': ['cnn', 'fox news', 'nbc', 'abc', 'cbs', 'usa today', 'new york times',
+                              'washington post', 'wall street journal'],
+                    'domains': ['cnn.com', 'foxnews.com', 'nbcnews.com', 'usatoday.com', 'nytimes.com']
+                },
+                'UK': {
+                    'keywords': ['britain', 'british', 'london', 'manchester', 'liverpool', 'uk', 'united kingdom',
+                               'england', 'scotland', 'wales', 'bbc', 'nhs', 'parliament'],
+                    'sources': ['bbc', 'guardian', 'telegraph', 'independent', 'daily mail', 'mirror'],
+                    'domains': ['bbc.co.uk', 'theguardian.com', 'telegraph.co.uk', 'dailymail.co.uk']
+                },
+                'Qatar': {
+                    'keywords': ['qatar', 'doha', 'qatari', 'al thani', 'emir', 'lusail', 'al wakrah',
+                               'gulf', 'middle east', 'arabian'],
+                    'sources': ['al jazeera', 'gulf times', 'peninsula', 'qatar tribune'],
+                    'domains': ['aljazeera.com', 'gulf-times.com', 'thepeninsulaqatar.com']
+                },
+                'India': {
+                    'keywords': ['india', 'indian', 'bharat', 'hindustan', 'mumbai', 'delhi', 'bangalore',
+                               'hyderabad', 'chennai', 'kolkata', 'bollywood', 'cricket', 'modi'],
+                    'sources': ['times of india', 'the hindu', 'hindustan times', 'indian express', 'ndtv'],
+                    'domains': ['timesofindia.indiatimes.com', 'thehindu.com', 'hindustantimes.com']
+                }
+            }
+            
+            # Create a simple location classifier object
+            class SimpleLocationClassifier:
+                def __init__(self, patterns):
+                    self.country_patterns = patterns
+                
+                def classify(self, text, platform=None, source=None, user_location=None, user_name=None, user_handle=None):
+                    """Classify location based on text and metadata."""
+                    if not text or pd.isna(text):
+                        return None, None
+                    
+                    text = str(text).lower()
+                    platform = str(platform or '').lower()
+                    source = str(source or '').lower()
+                    user_location = str(user_location or '').lower()
+                    user_name = str(user_name or '').lower()
+                    user_handle = str(user_handle or '').lower()
+                    
+                    # Initialize country scores
+                    country_scores = {country: 0.0 for country in self.country_patterns.keys()}
+                    
+                    # 1. Source/Platform Analysis (highest weight)
+                    for country, patterns in self.country_patterns.items():
+                        # Check source names
+                        for source_name in patterns['sources']:
+                            if source_name in source or source_name in platform:
+                                country_scores[country] += 5.0
+                        
+                        # Check domains
+                        for domain_name in patterns['domains']:
+                            if domain_name in user_location:
+                                country_scores[country] += 5.0
+                    
+                    # 2. Text Content Analysis
+                    for country, patterns in self.country_patterns.items():
+                        for keyword in patterns['keywords']:
+                            if keyword in text:
+                                country_scores[country] += 1.0
+                    
+                    # 3. User Location Analysis
+                    if user_location:
+                        for country, patterns in self.country_patterns.items():
+                            if country.lower() in user_location:
+                                country_scores[country] += 3.0
+                            for keyword in patterns['keywords']:
+                                if keyword in user_location:
+                                    country_scores[country] += 2.0
+                    
+                    # 4. Username/Handle Analysis
+                    for name in [user_name, user_handle]:
+                        if name:
+                            for country, patterns in self.country_patterns.items():
+                                for keyword in patterns['keywords'][:5]:  # Use first 5 keywords
+                                    if keyword in name:
+                                        country_scores[country] += 2.0
+                    
+                    # Determine the country with the highest score
+                    max_score = max(country_scores.values())
+                    if max_score >= 2.0:  # Minimum threshold
+                        # Get the country with the highest score
+                        for country, score in country_scores.items():
+                            if score == max_score:
+                                confidence = min(1.0, score / 10.0)  # Normalize confidence
+                                return country.lower(), confidence
+                    
+                    return None, None
+            
+            return SimpleLocationClassifier(country_patterns)
+            
+        except Exception as e:
+            logger.error(f"Failed to initialize location classifier: {e}")
+            return None
+
+    def update_location_classifications(self, user_id: str, batch_size: int = 100) -> Dict[str, Any]:
+        """
+        Update location classifications for existing records in the database.
+        This is similar to the batch location classification script functionality.
+        
+        Args:
+            user_id (str): The user ID to process records for
+            batch_size (int): Number of records to process in each batch
+            
+        Returns:
+            Dict containing update statistics
+        """
+        if not self.location_classifier:
+            logger.error("Location classifier not initialized. Cannot update classifications.")
+            return {"error": "Location classifier not initialized"}
+        
+        logger.info(f"Starting location classification update for user {user_id}...")
+        
+        try:
+            with self.db_factory() as db:
+                # Get total count of records for this user
+                total_records = db.query(models.SentimentData).filter(
+                    models.SentimentData.user_id == user_id
+                ).count()
+                
+                if total_records == 0:
+                    logger.warning(f"No records found for user {user_id}")
+                    return {"message": "No records found for user", "total_records": 0}
+                
+                logger.info(f"Found {total_records} records to process for user {user_id}")
+                
+                # Calculate number of batches
+                num_batches = (total_records + batch_size - 1) // batch_size
+                logger.info(f"Processing in {num_batches} batches of {batch_size}")
+                
+                overall_stats = {
+                    'user_id': user_id,
+                    'total_records': total_records,
+                    'total_updated': 0,
+                    'total_unchanged': 0,
+                    'country_changes': {},
+                    'confidence_scores': [],
+                    'batches_processed': 0
+                }
+                
+                for batch_num in range(num_batches):
+                    offset = batch_num * batch_size
+                    
+                    logger.info(f"Processing batch {batch_num + 1}/{num_batches} (offset: {offset})")
+                    
+                    # Get batch of records
+                    records = db.query(models.SentimentData).filter(
+                        models.SentimentData.user_id == user_id
+                    ).offset(offset).limit(batch_size).all()
+                    
+                    batch_stats = {
+                        'processed': 0,
+                        'updated': 0,
+                        'unchanged': 0,
+                        'country_changes': {},
+                        'confidence_scores': []
+                    }
+                    
+                    for record in records:
+                        try:
+                            # Get existing data for classification
+                            text = record.text or ''
+                            platform = record.platform or ''
+                            source = record.source or ''
+                            user_location = record.user_location or ''
+                            user_name = record.user_name or ''
+                            user_handle = record.user_handle or ''
+                            
+                            # Detect new country classification
+                            new_country, confidence = self.location_classifier.classify(
+                                text, platform, source, user_location, user_name, user_handle
+                            )
+                            
+                            # Track confidence
+                            batch_stats['confidence_scores'].append(confidence or 0.0)
+                            
+                            # Check if country classification changed
+                            old_country = record.country.lower() if record.country else 'unknown'
+                            if new_country and new_country != old_country:
+                                record.country = new_country.title()
+                                batch_stats['updated'] += 1
+                                
+                                # Track changes
+                                change_key = f"{old_country} -> {new_country}"
+                                batch_stats['country_changes'][change_key] = batch_stats['country_changes'].get(change_key, 0) + 1
+                            else:
+                                batch_stats['unchanged'] += 1
+                            
+                            batch_stats['processed'] += 1
+                            
+                        except Exception as e:
+                            logger.error(f"Error processing record {record.entry_id}: {e}")
+                            continue
+                    
+                    # Update overall stats
+                    overall_stats['total_updated'] += batch_stats['updated']
+                    overall_stats['total_unchanged'] += batch_stats['unchanged']
+                    overall_stats['all_confidence_scores'] = overall_stats.get('all_confidence_scores', []) + batch_stats['confidence_scores']
+                    overall_stats['batches_processed'] += 1
+                    
+                    # Merge country changes
+                    for change, count in batch_stats['country_changes'].items():
+                        overall_stats['country_changes'][change] = overall_stats['country_changes'].get(change, 0) + count
+                    
+                    # Commit after each batch
+                    db.commit()
+                    logger.info(f"Batch {batch_num + 1} completed: {batch_stats['updated']} updated, {batch_stats['unchanged']} unchanged")
+                    
+                    # Show some examples of changes
+                    if batch_stats['country_changes']:
+                        logger.info(f"Batch {batch_num + 1} changes: {dict(list(batch_stats['country_changes'].items())[:3])}")
+                
+                # Calculate final stats
+                overall_stats['total_unchanged'] = total_records - overall_stats['total_updated']
+                if overall_stats['all_confidence_scores']:
+                    overall_stats['average_confidence'] = sum(overall_stats['all_confidence_scores']) / len(overall_stats['all_confidence_scores'])
+                    overall_stats['high_confidence_count'] = sum(1 for score in overall_stats['all_confidence_scores'] if score >= 0.7)
+                    overall_stats['medium_confidence_count'] = sum(1 for score in overall_stats['all_confidence_scores'] if 0.4 <= score < 0.7)
+                    overall_stats['low_confidence_count'] = sum(1 for score in overall_stats['all_confidence_scores'] if score < 0.4)
+                else:
+                    overall_stats['average_confidence'] = 0.0
+                    overall_stats['high_confidence_count'] = 0
+                    overall_stats['medium_confidence_count'] = 0
+                    overall_stats['low_confidence_count'] = 0
+                
+                logger.info("Location classification update completed successfully!")
+                return overall_stats
+                
+        except Exception as e:
+            logger.error(f"Error during location classification update: {e}", exc_info=True)
+            return {'error': str(e)}
+
+    def get_status(self) -> Dict[str, Any]:
+        """Get current agent status and task information."""
+        return {
+            "status": self.status,
+            "task_status": self.task_status,
+            "last_run_times": self.last_run_times,
+            "config_summary": {
+                "collection_interval": self.config.get("collection_interval_minutes"),
+                "processing_interval": self.config.get("processing_interval_minutes"),
+                "data_retention_days": self.config.get("data_retention_days"),
+                "sources_enabled": self.config.get("sources", {}),
+                "adaptive_scheduling": self.config.get("adaptive_scheduling", False),
+                "auto_optimization": self.config.get("auto_optimization", False)
+            },
+            "data_history_summary": {
+                "sentiment_trends_count": len(self.data_history.get("sentiment_trends", [])),
+                "system_health_count": len(self.data_history.get("system_health", [])),
+                "data_quality_metrics_count": len(self.data_history.get("data_quality_metrics", []))
+            },
+            "timestamp": datetime.now().isoformat()
+        }
+
+    def _push_raw_data_to_db(self, user_id: str):
+        """Push raw collected data to database without processing"""
+        try:
+            logger.info(f"Pushing raw data to DB for user {user_id}")
+            
+            raw_data_path = self.base_path / 'data' / 'raw'
+            if not raw_data_path.exists():
+                logger.warning("No raw data directory found")
+                return True
+            
+            # Get all raw CSV files
+            raw_files = list(raw_data_path.glob('*.csv'))
+            if not raw_files:
+                logger.info("No raw data files found to push to DB")
+                return True
+            
+            total_records = 0
+            all_records = []
+            
+            # First, collect all records from all files
+            for file_path in raw_files:
+                try:
+                    logger.info(f"Reading raw file: {file_path.name}")
+                    
+                    # Read CSV without any processing
+                    df = pd.read_csv(file_path, on_bad_lines='warn')
+                    logger.info(f"Read {len(df)} rows from {file_path.name}")
+                    
+                    # Convert to records and add user_id
+                    for _, row in df.iterrows():
+                        record_data = row.to_dict()
+                        record_data['user_id'] = user_id
+                        
+                        # Ensure required fields exist
+                        if 'text' not in record_data:
+                            record_data['text'] = record_data.get('content', record_data.get('description', ''))
+                        
+                        all_records.append(record_data)
+                    
+                    total_records += len(df)
+                    
+                except Exception as e:
+                    logger.error(f"Error reading file {file_path.name}: {e}")
+                    continue
+            
+            # Store all records for deduplication later
+            self._temp_raw_records = all_records
+            
+            logger.info(f"Raw data collection completed: {total_records} total records collected from {len(raw_files)} files")
+            return True
+            
+        except Exception as e:
+            logger.error(f"Error during raw data collection: {e}", exc_info=True)
+            return False
+
+    def _run_deduplication(self, user_id: str):
+        """Run deduplication on collected raw data before processing"""
+        try:
+            if not hasattr(self, '_temp_raw_records') or not self._temp_raw_records:
+                logger.info("No raw records to deduplicate")
+                return True
+            
+            logger.info(f"Starting deduplication for user {user_id} with {len(self._temp_raw_records)} records")
+            
+            with self.db_factory() as db:
+                # Run deduplication
+                dedup_results = self.deduplication_service.deduplicate_new_data(
+                    self._temp_raw_records, db, user_id
+                )
+                
+                # Log deduplication summary
+                summary = self.deduplication_service.get_deduplication_summary(dedup_results)
+                logger.info(f"Deduplication results:\n{summary}")
+                
+                # Store unique records for database insertion
+                self._unique_records = dedup_results['unique_records']
+                
+                # Insert unique records into database
+                if self._unique_records:
+                    logger.info(f"Inserting {len(self._unique_records)} unique records into database")
+                    
+                    for record_data in self._unique_records:
+                        try:
+                            # Create SentimentData object
+                            db_record = models.SentimentData(
+                                run_timestamp=datetime.utcnow(),
+                                user_id=user_id,
+                                platform=record_data.get('platform', ''),
+                                text=record_data.get('text', ''),
+                                content=record_data.get('content', ''),
+                                title=record_data.get('title', ''),
+                                description=record_data.get('description', ''),
+                                url=record_data.get('url', ''),
+                                published_date=record_data.get('published_date'),
+                                source=record_data.get('source', ''),
+                                source_url=record_data.get('source_url', ''),
+                                query=record_data.get('query', ''),
+                                language=record_data.get('language', ''),
+                                date=record_data.get('date'),
+                                file_source=record_data.get('file_source', ''),
+                                original_id=record_data.get('id', ''),
+                                alert_id=record_data.get('alert_id'),
+                                published_at=record_data.get('published_at'),
+                                source_type=record_data.get('source_type', ''),
+                                country=record_data.get('country', ''),
+                                favorite=record_data.get('favorite'),
+                                tone=record_data.get('tone', ''),
+                                source_name=record_data.get('source_name', ''),
+                                parent_url=record_data.get('parent_url', ''),
+                                parent_id=record_data.get('parent_id', ''),
+                                children=record_data.get('children'),
+                                direct_reach=record_data.get('direct_reach'),
+                                cumulative_reach=record_data.get('cumulative_reach'),
+                                domain_reach=record_data.get('domain_reach'),
+                                tags=record_data.get('tags', ''),
+                                score=record_data.get('score'),
+                                alert_name=record_data.get('alert_name', ''),
+                                type=record_data.get('type', ''),
+                                post_id=record_data.get('post_id', ''),
+                                retweets=record_data.get('retweets'),
+                                likes=record_data.get('likes'),
+                                user_location=record_data.get('user_location', ''),
+                                comments=record_data.get('comments'),
+                                user_name=record_data.get('user_name', ''),
+                                user_handle=record_data.get('user_handle', ''),
+                                user_avatar=record_data.get('user_avatar', '')
+                            )
+                            db.add(db_record)
+                            
+                        except Exception as e:
+                            logger.error(f"Error creating database record: {e}")
+                            continue
+                    
+                    # Commit all records
+                    db.commit()
+                    logger.info(f"Successfully inserted {len(self._unique_records)} unique records into database")
+                else:
+                    logger.info("No unique records to insert after deduplication")
+                
+                # Clean up raw CSV files after successful processing
+                raw_data_path = self.base_path / 'data' / 'raw'
+                if raw_data_path.exists():
+                    raw_files = list(raw_data_path.glob('*.csv'))
+                    if raw_files:
+                        logger.info(f"Cleaning up {len(raw_files)} raw CSV files after successful processing")
+                        for file_path in raw_files:
+                            try:
+                                file_path.unlink()
+                                logger.debug(f"Deleted raw file: {file_path.name}")
+                            except Exception as e:
+                                logger.warning(f"Failed to delete raw file {file_path.name}: {e}")
+                        logger.info("Raw file cleanup completed")
+                
+                # Clean up temporary data
+                if hasattr(self, '_temp_raw_records'):
+                    delattr(self, '_temp_raw_records')
+                
+                # Store deduplication results for logging
+                self._last_dedup_results = dedup_results
+                
+                return True
+                
+        except Exception as e:
+            logger.error(f"Error during deduplication: {e}", exc_info=True)
+            return False
+
+    def _run_sentiment_batch_update(self, user_id: str):
+        """Run sentiment analysis in batches of 50 for newly inserted unique records"""
+        try:
+            logger.info(f"Starting batch sentiment analysis for user {user_id}")
+            
+            # Check if we have unique records from deduplication
+            if not hasattr(self, '_unique_records') or not self._unique_records:
+                logger.info(f"No unique records from deduplication for user {user_id}, skipping sentiment analysis")
+                return True
+            
+                        # Get the database records that were just inserted during deduplication
+            with self.db_factory() as db:
+                # Query for the records that were just inserted (they won't have sentiment analysis yet)
+                # We'll use the text content to identify them since they're fresh
+                unique_texts = []
+                for record in self._unique_records:
+                    text_content = record.get('text') or record.get('content') or record.get('title') or record.get('description')
+                    if text_content:
+                        unique_texts.append(text_content)
+                
+                if not unique_texts:
+                    logger.info("No text content found in unique records, skipping sentiment analysis")
+                    return True
+                
+                # Query database for the records that were just inserted
+                records_to_update = db.query(models.SentimentData).filter(
+                    models.SentimentData.user_id == user_id,
+                    models.SentimentData.sentiment_label.is_(None),  # Records without sentiment analysis
+                    models.SentimentData.text.in_(unique_texts)  # Only the newly inserted records
+                ).all()
+                
+                if not records_to_update:
+                    logger.info(f"No newly inserted records found for sentiment analysis for user {user_id}")
+                    return True
+                
+                logger.info(f"Found {len(records_to_update)} newly inserted records for sentiment analysis")
+                
+                # Process in batches of 50
+                batch_size = 50
+                processed_count = 0
+                
+                for i in range(0, len(records_to_update), batch_size):
+                    batch = records_to_update[i:i + batch_size]
+                    batch_num = i // batch_size + 1
+                    total_batches = (len(records_to_update) + batch_size - 1) // batch_size
+                    
+                    logger.info(f"Processing sentiment batch {batch_num}/{total_batches} ({len(batch)} records)")
+                    
+                    for record in batch:
+                        try:
+                            text_content = record.text or record.content or record.title or record.description
+                            if text_content:
+                                # Perform presidential sentiment analysis
+                                analysis_result = self.sentiment_analyzer.analyze(text_content, record.source_type)
+                                
+                                # Update record with sentiment analysis
+                                record.sentiment_label = analysis_result['sentiment_label']
+                                record.sentiment_score = analysis_result['sentiment_score']
+                                record.sentiment_justification = analysis_result['sentiment_justification']
+                                processed_count += 1
+                        except Exception as e:
+                            logger.error(f"Error processing record {record.entry_id}: {e}")
+                            continue
+                    
+                    # Commit every batch of 50
+                    db.commit()
+                    logger.info(f"Committed sentiment batch {batch_num}/{total_batches}")
+                
+                logger.info(f"Sentiment batch update completed: {processed_count} records processed in batches of 50")
+                
+                # Clean up the unique records after processing
+                if hasattr(self, '_unique_records'):
+                    delattr(self, '_unique_records')
+                
+                return True
+                
+        except Exception as e:
+            logger.error(f"Error during sentiment batch update: {e}", exc_info=True)
+            return False
+
+    def _run_location_batch_update(self, user_id: str):
+        """Run location classification updates in batches of 100 for newly inserted records"""
+        try:
+            logger.info(f"Starting location batch update for user {user_id}")
+            
+            # Check if we have unique records from deduplication
+            if not hasattr(self, '_unique_records') or not self._unique_records:
+                logger.info(f"No unique records from deduplication for user {user_id}, skipping location updates")
+                return True
+            
+            with self.db_factory() as db:
+                # Query for the records that were just inserted (they won't have location data yet)
+                # We'll use the text content to identify them since they're fresh
+                unique_texts = []
+                for record in self._unique_records:
+                    text_content = record.get('text') or record.get('content') or record.get('title') or record.get('description')
+                    if text_content:
+                        unique_texts.append(text_content)
+                
+                if not unique_texts:
+                    logger.info("No text content found in unique records, skipping location updates")
+                    return True
+                
+                # Query database for the newly inserted records that need location updates
+                records_needing_location = db.query(models.SentimentData).filter(
+                    models.SentimentData.user_id == user_id,
+                    models.SentimentData.text.in_(unique_texts),  # Only the newly inserted records
+                    or_(
+                        models.SentimentData.location_label.is_(None),
+                        models.SentimentData.location_confidence < 0.7
+                    )
+                ).all()
+                
+                if not records_needing_location:
+                    logger.info(f"No newly inserted records need location updates for user {user_id}")
+                    return True
+                
+                logger.info(f"Found {len(records_needing_location)} newly inserted records needing location updates")
+                
+                # Process in batches of 100
+                batch_size = 100
+                updated_count = 0
+                
+                for i in range(0, len(records_needing_location), batch_size):
+                    batch = records_needing_location[i:i + batch_size]
+                    batch_num = i // batch_size + 1
+                    total_batches = (len(records_needing_location) + batch_size - 1) // batch_size
+                    
+                    logger.info(f"Processing location batch {batch_num}/{total_batches} ({len(batch)} records)")
+                    
+                    for record in batch:
+                        try:
+                            text = record.text or record.content or record.title or ""
+                            platform = record.platform or ""
+                            source = record.source or ""
+                            user_location = record.user_location or ""
+                            user_name = record.user_name or ""
+                            user_handle = record.user_handle or ""
+                            
+                            # Perform location classification
+                            location_label, confidence = self.location_classifier.classify(
+                                text, platform, source, user_location, user_name, user_handle
+                            )
+                            
+                            # Update record with location data
+                            record.location_label = location_label
+                            record.location_confidence = confidence
+                            updated_count += 1
+                            
+                        except Exception as e:
+                            logger.error(f"Error updating location for record {record.entry_id}: {e}")
+                            continue
+                    
+                    # Commit every batch of 100
+                    db.commit()
+                    logger.info(f"Committed location batch {batch_num}/{total_batches}")
+                
+                logger.info(f"Location batch update completed: {updated_count} records updated in batches of 100")
+                
+                # Clean up the unique records after processing (if not already cleaned up by sentiment analysis)
+                if hasattr(self, '_unique_records'):
+                    delattr(self, '_unique_records')
+                
+                return True
+                
+        except Exception as e:
+            logger.error(f"Error during location batch update: {e}", exc_info=True)
+            return False
 
 def parse_delay_to_seconds(delay_str: str) -> Optional[int]:
     """Parses a delay string (e.g., '10min', '30sec', 'now') into seconds."""

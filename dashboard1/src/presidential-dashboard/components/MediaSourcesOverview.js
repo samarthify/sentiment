@@ -15,6 +15,7 @@ import {
   Newspaper as NewspaperIcon,
   Tv as TvIcon,
   Twitter as TwitterIcon,
+  Facebook as FacebookIcon,
   TrendingUp as TrendingUpIcon,
   TrendingDown as TrendingDownIcon,
   Remove as RemoveIcon
@@ -22,98 +23,194 @@ import {
 import { motion } from 'framer-motion';
 import DataService from '../../services/DataService';
 
+// Import AuthContext with error handling
+let useAuth = null;
+try {
+  const authModule = require('../../contexts/AuthContext');
+  useAuth = authModule.useAuth;
+} catch (error) {
+  console.warn('AuthContext not available, using fallback');
+  useAuth = () => ({ accessToken: null });
+}
+
 const MediaSourcesOverview = () => {
   const [mediaOverview, setMediaOverview] = useState({
     newspapers: { total_sources: 0, avg_sentiment: 0, total_articles: 0, top_performers: [], critical_sources: [] },
     television: { total_sources: 0, avg_sentiment: 0, total_reports: 0, top_performers: [], critical_sources: [] },
-    twitter: { total_influencers: 0, avg_sentiment: 0, total_tweets: 0, top_performers: [], critical_influencers: [] }
+    twitter: { total_influencers: 0, avg_sentiment: 0, total_tweets: 0, top_performers: [], critical_influencers: [] },
+    facebook: { total_pages: 0, avg_sentiment: 0, total_posts: 0, top_performers: [], critical_pages: [] }
   });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  
+  // Use the imported hook or fallback
+  const authContext = useAuth();
+  const accessToken = authContext?.accessToken || null;
+  const user = authContext?.user || null;
 
   useEffect(() => {
-    const fetchMediaData = async () => {
+    const loadMediaData = async () => {
       try {
         setLoading(true);
         setError(null);
+        console.log('📰 MediaSourcesOverview: Loading media data...');
 
-        // Fetch data from all three endpoints without authentication
-        const [newspapers, television, twitter] = await Promise.all([
-          DataService.getNewspaperSources(null),
-          DataService.getTelevisionSources(null),
-          DataService.getTwitterSources(null)
+        // Fetch data from all media sources endpoints
+        const [newspapers, television, twitter, facebook] = await Promise.all([
+          DataService.getNewspaperSources(accessToken, user?.id).catch(err => {
+            console.error('❌ Error fetching newspapers:', err);
+            return [];
+          }),
+          DataService.getTelevisionSources(accessToken).catch(err => {
+            console.error('❌ Error fetching television:', err);
+            return [];
+          }),
+          DataService.getTwitterSources(accessToken).catch(err => {
+            console.error('❌ Error fetching twitter:', err);
+            return [];
+          }),
+          DataService.getFacebookSources(accessToken).catch(err => {
+            console.error('❌ Error fetching facebook:', err);
+            return [];
+          })
         ]);
+
+        console.log('📰 MediaSourcesOverview: Raw data received:', {
+          newspapers: newspapers,
+          television: television,
+          twitter: twitter,
+          facebook: facebook
+        });
+
+        // Validate data structure
+        const validateData = (data, type) => {
+          if (!Array.isArray(data)) {
+            console.warn(`⚠️ ${type} data is not an array:`, data);
+            return [];
+          }
+          if (data.length > 0 && (!data[0].name || !data[0].sentiment_score)) {
+            console.warn(`⚠️ ${type} data missing required fields:`, data[0]);
+          }
+          return data;
+        };
+
+        const validatedNewspapers = validateData(newspapers, 'Newspapers');
+        const validatedTelevision = validateData(television, 'Television');
+        const validatedTwitter = validateData(twitter, 'Twitter');
+        const validatedFacebook = validateData(facebook, 'Facebook');
+
+        // Log sample data structure for debugging
+        if (validatedNewspapers.length > 0) {
+          console.log('📰 Sample newspaper data:', validatedNewspapers[0]);
+        }
+        if (validatedTelevision.length > 0) {
+          console.log('📺 Sample television data:', validatedTelevision[0]);
+        }
+        if (validatedTwitter.length > 0) {
+          console.log('🐦 Sample twitter data:', validatedTwitter[0]);
+        }
+        if (validatedFacebook.length > 0) {
+          console.log('📘 Sample facebook data:', validatedFacebook[0]);
+        }
+
+        console.log('📰 MediaSourcesOverview: Data fetched:', {
+          newspapers: validatedNewspapers.length,
+          television: validatedTelevision.length,
+          twitter: validatedTwitter.length,
+          facebook: validatedFacebook.length
+        });
 
         // Process newspaper data
         const newspaperData = {
-          total_sources: newspapers.length,
-          avg_sentiment: newspapers.length > 0 ? 
-            newspapers.reduce((sum, paper) => sum + paper.sentiment_score, 0) / newspapers.length : 0,
-          total_articles: newspapers.reduce((sum, paper) => sum + paper.coverage_count, 0),
-          top_performers: newspapers
-            .filter(paper => paper.sentiment_score > 0.1)
-            .sort((a, b) => b.sentiment_score - a.sentiment_score)
+          total_sources: validatedNewspapers.length,
+          avg_sentiment: validatedNewspapers.length > 0 ? 
+            validatedNewspapers.reduce((sum, paper) => sum + (parseFloat(paper.sentiment_score) || 0), 0) / validatedNewspapers.length : 0,
+          total_articles: validatedNewspapers.reduce((sum, paper) => sum + (parseInt(paper.coverage_count) || 0), 0),
+          top_performers: validatedNewspapers
+            .filter(paper => (parseFloat(paper.sentiment_score) || 0) > 0.1)
+            .sort((a, b) => (parseFloat(b.sentiment_score) || 0) - (parseFloat(a.sentiment_score) || 0))
             .slice(0, 3)
             .map(paper => paper.name),
-          critical_sources: newspapers
-            .filter(paper => paper.sentiment_score < -0.1)
-            .sort((a, b) => a.sentiment_score - b.sentiment_score)
+          critical_sources: validatedNewspapers
+            .filter(paper => (parseFloat(paper.sentiment_score) || 0) < -0.1)
+            .sort((a, b) => (parseFloat(a.sentiment_score) || 0) - (parseFloat(b.sentiment_score) || 0))
             .slice(0, 3)
             .map(paper => paper.name)
         };
 
         // Process television data
         const televisionData = {
-          total_sources: television.length,
-          avg_sentiment: television.length > 0 ? 
-            television.reduce((sum, tv) => sum + tv.sentiment_score, 0) / television.length : 0,
-          total_reports: television.reduce((sum, tv) => sum + tv.coverage_count, 0),
-          top_performers: television
-            .filter(tv => tv.sentiment_score > 0.1)
-            .sort((a, b) => b.sentiment_score - a.sentiment_score)
+          total_sources: validatedTelevision.length,
+          avg_sentiment: validatedTelevision.length > 0 ? 
+            validatedTelevision.reduce((sum, tv) => sum + (parseFloat(tv.sentiment_score) || 0), 0) / validatedTelevision.length : 0,
+          total_reports: validatedTelevision.reduce((sum, tv) => sum + (parseInt(tv.coverage_count) || 0), 0),
+          top_performers: validatedTelevision
+            .filter(tv => (parseFloat(tv.sentiment_score) || 0) > 0.1)
+            .sort((a, b) => (parseFloat(b.sentiment_score) || 0) - (parseFloat(a.sentiment_score) || 0))
             .slice(0, 3)
             .map(tv => tv.name),
-          critical_sources: television
-            .filter(tv => tv.sentiment_score < -0.1)
-            .sort((a, b) => a.sentiment_score - b.sentiment_score)
+          critical_sources: validatedTelevision
+            .filter(tv => (parseFloat(tv.sentiment_score) || 0) < -0.1)
+            .sort((a, b) => (parseFloat(a.sentiment_score) || 0) - (parseFloat(b.sentiment_score) || 0))
             .slice(0, 3)
             .map(tv => tv.name)
         };
 
         // Process Twitter data
         const twitterData = {
-          total_influencers: twitter.length,
-          avg_sentiment: twitter.length > 0 ? 
-            twitter.reduce((sum, account) => sum + account.sentiment_score, 0) / twitter.length : 0,
-          total_tweets: twitter.reduce((sum, account) => sum + account.tweets_count, 0),
-          top_performers: twitter
-            .filter(account => account.sentiment_score > 0.1)
-            .sort((a, b) => b.sentiment_score - a.sentiment_score)
+          total_influencers: validatedTwitter.length,
+          avg_sentiment: validatedTwitter.length > 0 ? 
+            validatedTwitter.reduce((sum, account) => sum + (parseFloat(account.sentiment_score) || 0), 0) / validatedTwitter.length : 0,
+          total_tweets: validatedTwitter.reduce((sum, account) => sum + (parseInt(account.tweets_count) || 0), 0),
+          top_performers: validatedTwitter
+            .filter(account => (parseFloat(account.sentiment_score) || 0) > 0.1)
+            .sort((a, b) => (parseFloat(b.sentiment_score) || 0) - (parseFloat(a.sentiment_score) || 0))
             .slice(0, 3)
             .map(account => account.name),
-          critical_influencers: twitter
-            .filter(account => account.sentiment_score < -0.1)
-            .sort((a, b) => a.sentiment_score - b.sentiment_score)
+          critical_influencers: validatedTwitter
+            .filter(account => (parseFloat(account.sentiment_score) || 0) < -0.1)
+            .sort((a, b) => (parseFloat(a.sentiment_score) || 0) - (parseFloat(b.sentiment_score) || 0))
             .slice(0, 3)
             .map(account => account.name)
+        };
+
+        // Process Facebook data
+        const facebookData = {
+          total_pages: validatedFacebook.length,
+          avg_sentiment: validatedFacebook.length > 0 ? 
+            validatedFacebook.reduce((sum, page) => sum + (parseFloat(page.sentiment_score) || 0), 0) / validatedFacebook.length : 0,
+          total_posts: validatedFacebook.reduce((sum, page) => sum + (parseInt(page.coverage_count) || 0), 0),
+          top_performers: validatedFacebook
+            .filter(page => (parseFloat(page.sentiment_score) || 0) > 0.1)
+            .sort((a, b) => (parseFloat(b.sentiment_score) || 0) - (parseFloat(a.sentiment_score) || 0))
+            .slice(0, 3)
+            .map(page => page.name),
+          critical_pages: validatedFacebook
+            .filter(page => (parseFloat(page.sentiment_score) || 0) < -0.1)
+            .sort((a, b) => (parseFloat(a.sentiment_score) || 0) - (parseFloat(b.sentiment_score) || 0))
+            .slice(0, 3)
+            .map(page => page.name)
         };
 
         setMediaOverview({
           newspapers: newspaperData,
           television: televisionData,
-          twitter: twitterData
+          twitter: twitterData,
+          facebook: facebookData
         });
 
-      } catch (err) {
-        console.error('Error fetching media data:', err);
-        setError('Failed to load media sources data. Please try again later.');
+        console.log('📰 MediaSourcesOverview: Data processed successfully');
+      } catch (error) {
+        console.error('❌ MediaSourcesOverview: Error loading media data:', error);
+        setError('Failed to load media data. Please try again later.');
       } finally {
         setLoading(false);
       }
     };
 
-    fetchMediaData();
-  }, []);
+    // Always try to fetch data, even without access token (for testing)
+    loadMediaData();
+  }, [accessToken, user?.id]);
 
   const getSentimentColor = (score) => {
     if (score >= 0.3) return 'success';
@@ -131,23 +228,30 @@ const MediaSourcesOverview = () => {
     {
       type: 'Newspapers',
       icon: <NewspaperIcon />,
-      color: 'primary',
+      color: 'primary.main',
       data: mediaOverview.newspapers,
       description: 'Top Nigerian newspapers'
     },
     {
       type: 'Television',
       icon: <TvIcon />,
-      color: 'secondary',
+      color: 'secondary.main',
       data: mediaOverview.television,
       description: 'Major TV channels'
     },
     {
       type: 'Twitter',
       icon: <TwitterIcon />,
-      color: 'info',
+      color: 'info.main',
       data: mediaOverview.twitter,
       description: 'Key influencers & officials'
+    },
+    {
+      type: 'Facebook',
+      icon: <FacebookIcon />,
+      color: 'success.main',
+      data: mediaOverview.facebook,
+      description: 'Popular Facebook pages'
     }
   ];
 
@@ -169,6 +273,25 @@ const MediaSourcesOverview = () => {
     );
   }
 
+  // Check if any media data is available
+  const hasData = mediaOverview.newspapers.total_sources > 0 || 
+                  mediaOverview.television.total_sources > 0 || 
+                  mediaOverview.twitter.total_influencers > 0 || 
+                  mediaOverview.facebook.total_pages > 0;
+
+  if (!loading && !hasData) {
+    return (
+      <Box>
+        <Typography variant="h5" gutterBottom sx={{ fontWeight: 600, mb: 3 }}>
+          📊 Media Sources Overview
+        </Typography>
+        <Typography variant="body2" color="text.secondary">
+          No media sources data available at the moment. Please try again later.
+        </Typography>
+      </Box>
+    );
+  }
+
   return (
     <Box>
       <Typography variant="h5" gutterBottom sx={{ fontWeight: 600, mb: 3 }}>
@@ -186,7 +309,7 @@ const MediaSourcesOverview = () => {
               <Card elevation={2} sx={{ height: '100%' }}>
                 <CardContent>
                   <Box display="flex" alignItems="center" mb={2}>
-                    <Avatar sx={{ bgcolor: `${mediaType.color}.main`, mr: 2 }}>
+                    <Avatar sx={{ bgcolor: mediaType.color, mr: 2 }}>
                       {mediaType.icon}
                     </Avatar>
                     <Box>

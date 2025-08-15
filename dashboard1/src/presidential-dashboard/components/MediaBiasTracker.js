@@ -73,10 +73,11 @@ const MediaBiasTracker = () => {
         setError(null);
 
         // Fetch data from all three media sources endpoints without authentication
-        const [newspapers, television, twitter] = await Promise.all([
+        const [newspapers, television, twitter, facebook] = await Promise.all([
           DataService.getNewspaperSources(null),
           DataService.getTelevisionSources(null),
-          DataService.getTwitterSources(null)
+          DataService.getTwitterSources(null),
+          DataService.getFacebookSources(null)
         ]);
 
         // Transform all sources into a unified format
@@ -120,6 +121,21 @@ const MediaBiasTracker = () => {
             recent_trend: getTrendFromSentiment(source.sentiment_score),
             last_updated: source.last_updated,
             top_headlines: source.recent_tweets?.map(tweet => tweet.text) || [],
+            sentiment_distribution: {
+              positive: source.sentiment_score > 0.2 ? 60 : source.sentiment_score < -0.2 ? 20 : 40,
+              negative: source.sentiment_score < -0.2 ? 60 : source.sentiment_score > 0.2 ? 20 : 40,
+              neutral: source.sentiment_score >= -0.2 && source.sentiment_score <= 0.2 ? 60 : 20
+            }
+          })),
+          ...facebook.map(source => ({
+            ...source,
+            type: 'facebook',
+            bias_score: source.sentiment_score,
+            bias_level: getBiasLevel(source.sentiment_score),
+            coverage_count: source.coverage_count,
+            recent_trend: getTrendFromSentiment(source.sentiment_score),
+            last_updated: source.last_updated,
+            top_headlines: source.recent_posts?.map(post => post.title) || [],
             sentiment_distribution: {
               positive: source.sentiment_score > 0.2 ? 60 : source.sentiment_score < -0.2 ? 20 : 40,
               negative: source.sentiment_score < -0.2 ? 60 : source.sentiment_score > 0.2 ? 20 : 40,
